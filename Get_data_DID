@@ -1,0 +1,1088 @@
+/* DIFF-IN-DIFF ANALYSIS OF CONTRACT TREATMENT - GET DATA */
+
+/******************************************************
+* Name: Get_data_DID
+* Created: 2023-03-20 by S Virtanen / MEB
+* Operating program: SAS 9.4
+*******************************************************
+*/
+
+*******************************************
+
+* Collect all sanctions ;
+
+proc sql;
+create table sanctions as
+select lopnr, input(datumborj, yymmdd8.) as indate format yymmdd10., input(datumslut, yymmdd8.) as outdate format yymmdd10.,
+pafoljd, foreskrift, huvudbrott
+from Crime3.V_krim_pafoljd
+;
+quit;
+
+* All kontraktsvård sanctions;
+
+proc sql;
+create table kv as
+select *
+from sanctions
+where FORESKRIFT="K" or FORESKRIFT="SK"
+;
+quit;
+
+* Select the first kv sanction for each individual;
+
+proc sort data=kv; by lopnr indate; run;
+
+data kv1;
+set kv;
+by lopnr;
+if first.lopnr;
+run;
+
+* Check index crime types for kv sanctions;
+
+proc sql;
+create table types as
+select HUVUDBROTT, count(*) as freq
+from kv1
+group by HUVUDBROTT
+order by freq desc;
+quit;
+
+* Select crimes that can be assumed to be related to substance abuse problems;
+
+proc sql;
+create table kv1 as
+select *
+from kv1
+where HUVUDBROTT="NARKOTIKABROTT" or HUVUDBROTT="GROVT RATTFYLLERI" or HUVUDBROTT="RATTFYLLERI" or
+HUVUDBROTT="MISSHANDEL" or HUVUDBROTT="GROV STÃ–LD" or HUVUDBROTT="STÃ–LD" or HUVUDBROTT="RÃ…N" or
+HUVUDBROTT="GROV MISSHANDEL" or HUVUDBROTT="HOT MOT TJÃ„NSTEMAN" or HUVUDBROTT="HÃ„LERI" or
+HUVUDBROTT="TILLGREPP AV FORTSKAFFNINGSMEDEL" or HUVUDBROTT="FÃ–RSÃ–K TILL STÃ–LD" or HUVUDBROTT="BEDRÃ„GERI" or
+HUVUDBROTT="VÃ…LD MOT TJÃ„NSTEMAN" or HUVUDBROTT="OLAGA HOT" or HUVUDBROTT="FÃ–RSÃ–K TILL RÃ…N" or
+HUVUDBROTT="FÃ–RSÃ–K TILL TILLGREPP AV FORTSKAFFNINGSMEDEL" or HUVUDBROTT="FÃ–RSÃ–K TILL GROV STÃ–LD" or
+HUVUDBROTT="OLOVLIG KÃ–RNING" or HUVUDBROTT="FÃ–RSÃ–K TILL VÃ…LD MOT TJÃ„NSTEMAN" or 
+HUVUDBROTT="GROVT NARKOTIKABROTT" or HUVUDBROTT="FÃ–RSÃ–K TILL GROV MISSHANDEL" or HUVUDBROTT="GROVT SJÃ–FYLLERI" or 
+HUVUDBROTT="FÃ–RSÃ–K TILL MISSHANDEL" or HUVUDBROTT="HEMFRIDSBROTT" or HUVUDBROTT="OFREDANDE" or 
+HUVUDBROTT="EGENMÃ„KTIGT FÃ–RFARANDE" or HUVUDBROTT="GROVT BEDRÃ„GERI MEDELST URKUNDSFÃ–RFALSKNING" or
+HUVUDBROTT="MEDHJÃ„LP TILL RÃ…N" or HUVUDBROTT="FÃ–RBEREDELSE TILL RÃ…N" or HUVUDBROTT="OLAGA TVÃ…NG" or
+HUVUDBROTT="OLOVLIGT ANSKAFFANDE AV ALKOHOLDRYCKER" or HUVUDBROTT="MEDHJÃ„LP TILL GROV STÃ–LD" or
+HUVUDBROTT="NARKOTIKABROTT (RINGA)" or HUVUDBROTT="FÃ–RSÃ–K TILL NARKOTIKABROTT" or 
+HUVUDBROTT="URKUNDSFÃ–RFALSKNING" or HUVUDBROTT="NARKOTIKABROTT, RINGA BROTT" or HUVUDBROTT="RINGA NARKOTIKABROTT" or 
+HUVUDBROTT="MEDHJÃ„LP TILL NARKOTIKABROTT" or HUVUDBROTT="MISSHANDEL, RINGA" or 
+HUVUDBROTT="FÃ–RBEREDELSE TILL GROV STÃ–LD" or HUVUDBROTT="FÃ–RBEREDELSE TILL GROVT NARKOTIKABROTT" or
+HUVUDBROTT="BROTT MOT ALKOHOLLAGEN" or HUVUDBROTT="FÃ–RSÃ–K TILL GROVT RÃ…N" or 
+HUVUDBROTT="GROV VÃ…RDSLÃ–SHET I TRAFIK" or HUVUDBROTT="FÃ–RBEREDELSE TILL GROV MISSHANDEL" or 
+HUVUDBROTT="MISSHANDEL, RINGA BROTT" or HUVUDBROTT="FÃ–RBEREDELSE TILL STÃ–LD" or 
+HUVUDBROTT="FÃ–RGRIPELSE MOT TJÃ„NSTEMAN" or HUVUDBROTT="NARKOTIKASMUGGLING" or
+HUVUDBROTT="OLOVLIG FÃ–RSÃ„LJNING AV ALKOHOLDRYCKER" or HUVUDBROTT="HOT MOT TJÃ„NSTEMAN, RINGA BROTT" or
+HUVUDBROTT="MEDHJÃ„LP TILL GROVT NARKOTIKABROTT" or HUVUDBROTT="MEDHJÃ„LP TILL GROVT RATTFYLLERI" or
+HUVUDBROTT="FÃ–RBEREDELSE TILL NARKOTIKABROTT" or HUVUDBROTT="NARKOTIKABROTT (RINGA BROTT)" or
+HUVUDBROTT="GROVT RÃ…N" or HUVUDBROTT="MEDHJÃ„LP TILL FÃ–RSÃ–K TILL GROV STÃ–LD" or HUVUDBROTT="OLOVLIGT BRUKANDE" or
+HUVUDBROTT="GROV OLOVLIG KÃ–RNING" or HUVUDBROTT="MISSHANDEL (RINGA)" or HUVUDBROTT="NARKOTIKABROTT, RINGA" or
+HUVUDBROTT="VÃ…LD OCH HOT MOT TJÃ„NSTEMAN" or HUVUDBROTT="OLAGA HOT, GROVT BROTT" or 
+HUVUDBROTT="GROV SKADEGÃ–RELSE" or HUVUDBROTT="OLOVLIG SPRITTILLVERKNING" or HUVUDBROTT="GROVT HÃ„LERI" or 
+HUVUDBROTT="MEDHJÃ„LP TILL FÃ–RSÃ–K TILL RÃ…N" or HUVUDBROTT="HOT OCH VÃ…LD MOT TJÃ„NSTEMAN" or 
+HUVUDBROTT="STÃ„MPLING TILL GROVT NARKOTIKABROTT" or HUVUDBROTT="FÃ–RSÃ–K TILL GROVT BEDRÃ„GERI" or
+HUVUDBROTT="FÃ–RSÃ–K TILL GROVT NARKOTIKABROTT" or HUVUDBROTT="GROVT RATTFYLLERI MEDELST OLOVLIG KÃ–RNING" or 
+HUVUDBROTT="FÃ–RSÃ–K TILL GROVT BEDRÃ„GERI MEDELST BRUKANDE AV FALSK URKUND" or 
+HUVUDBROTT="GROVT BEDRÃ„GERI MEDELST BRUKANDE AV FALSK URKUND" or HUVUDBROTT="ANSTIFTAN AV FÃ–RSÃ–K TILL RÃ…N" or 
+HUVUDBROTT="GROVT RATTFYLLERI B" or HUVUDBROTT="VÃ…LD ELLER HOT MOT TJÃ„NSTEMAN" or
+HUVUDBROTT="OLAGA HOT (GROVT BROTT)" or HUVUDBROTT="GROVT HEMFRIDSBROTT" or 
+HUVUDBROTT="MEDHJÃ„LP TILL FÃ–RSÃ–K TILL OLAGA TVÃ…NG" or 
+HUVUDBROTT="NARKOTIKABROTT (FÃ–RVÃ„RVAR I Ã–VERLÃ…TELSESYFTE OCH BRUKAR)" or 
+HUVUDBROTT="MEDHJÃ„LP TILL HÃ„LERI" or HUVUDBROTT="ANSTIFTAN AV GROV STÃ–LD" or 
+HUVUDBROTT="GROVT RATTFYLLERI OCH GROV VÃ…RDSLÃ–SHET I TRAFIK" or
+HUVUDBROTT="ANSTIFTAN AV NARKOTIKABROTT" or HUVUDBROTT="STÃ„MPLING TILL GROV MISSHANDEL" or 
+HUVUDBROTT="MEDHJÃ„LP TILL FÃ–RSÃ–K TILL NARKOTIKABROTT" or HUVUDBROTT="SNATTERI" or
+HUVUDBROTT="MEDHJÃ„LP TILL GROV MISSHANDEL" or HUVUDBROTT="NARKOTIKABROTT (INNEHAV)" or 
+HUVUDBROTT="OLOVLIG TILLVERKNING AV SPRIT OCH BEREDANDE AV MÃ„SK" or
+HUVUDBROTT="MEDHJÃ„LP TILL GROVT RÃ…N" or HUVUDBROTT="MEDHJÃ„LP TILL STÃ–LD" or HUVUDBROTT="GROVT RATTFYLLER"
+;
+quit;
+
+* n=14,835;
+
+* Remove sanctions that start on or after Jan 2013, or that have inconsistent start and end dates;
+
+data kv1;
+set kv1;
+if indate^=. and indate >= '01JAN2013'd then delete;
+if outdate^=. and indate >= outdate then delete;
+run;
+
+*N=14,097;
+
+* Find the relevant conviction from BRÅ data ;
+
+proc sql;
+create table crimes as
+select lopnr, input(besltdat, yymmdd8.) as besltdat format yymmdd10.
+from Crime3.V_BRA_CRIME
+where lopnr in (select lopnr from kv1);
+;
+quit;
+
+proc sql;
+create table crimes as
+select a.*, b.indate
+from crimes as a
+	left join kv1 as b
+	on a.lopnr=b.lopnr;
+quit;
+
+* Calculate absolute difference in days between conviction date and kv indate ;
+
+data crimes;
+set crimes;
+diff = intck("day",indate,besltdat);
+diff = abs(diff);
+run;
+
+* Select the conviction closest to kv indate ;
+
+proc sort data=crimes; by lopnr diff; run;
+
+data crimes;
+set crimes;
+by lopnr;
+if first.lopnr;
+run;
+
+* Join besltdat -> this will be the new trt start date to remove anticipation effects ;
+
+proc sql;
+create table kv2 as
+select a.*, b.besltdat, b.diff
+from kv1 as a
+	left join crimes as b
+	on a.lopnr=b.lopnr;
+quit;
+
+* Check how many have the same conviction date and kv indate  ;
+
+proc sql;
+select count(distinct lopnr)
+from kv2
+where besltdat = indate;
+quit;
+
+* ^- 12631 /14097 = 89,6% ;
+
+proc sgplot data=kv2;
+    histogram diff;
+run;
+
+PROC MEANS DATA=kv2 mean median min max std q1 q3 MAXDEC=0;
+ VAR diff;
+RUN;
+
+* Create new treatment start date ;
+
+data kv2;
+set kv2;
+
+format treat_start yymmdd10.;
+
+if indate=besltdat then treat_start=indate;
+if indate < besltdat then treat_start=indate;
+if indate > besltdat & diff < 181 then treat_start=besltdat;
+if indate > besltdat & diff > 180 then treat_start=indate;
+run;
+
+* Year and month indicator for each row ;
+
+data kv2;
+set kv2;
+yearmonth = treat_start ;
+format treat_start yymmdd10. yearmonth yymmn6. ;
+run;
+
+PROC FREQ DATA = kv2;
+TABLES yearmonth;
+run;
+
+* If outdate is missing, recode as end of adminstrative period;
+
+data kv2;
+set kv2;
+
+format admin_end_d yymmdd10.;
+
+admin_end_d = '31DEC2013'd ;
+
+if outdate = . then cens = 1;
+if cens = 1 then outdate = admin_end_d ;
+
+run;
+
+* Calculate length of recorded sanction time  ;
+
+data kv2;
+set kv2;
+treat_length=((outdate-indate)/30);
+run;
+
+Proc Means Data = kv2 N MEAN STD MEDIAN MIN MAX Q1 Q3;
+Var treat_length;
+Run;
+
+* Create follow-up time (2 years pre- and post treatment start);
+
+data kv3;
+set kv2;
+format follow_start yymmdd10.;
+format follow_end yymmdd10.;
+
+follow_start = intnx('day',treat_start, -730);
+follow_end = intnx('day',treat_start, 730);
+run;
+
+* If follow-end is after admin cens date, replace with admin cens ;
+
+data kv3;
+set kv3;
+if follow_end > '31DEC2013'd then follow_end='31DEC2013'd;
+run;
+
+proc sort data=kv3; by follow_start; run;
+
+* Remove individuals whose follow-up starts before jan 1997;
+
+data kv3;
+set kv3;
+if follow_start < '01JAN1997'd then delete;
+run;
+
+proc sort data=kv3; by follow_start; run;
+
+* n=11,893 ;
+
+* Collect censoring dates ;
+
+* Imprisonments;
+
+proc sql;
+create table prison as
+select *
+from sanctions
+where pafoljd="FANGELSE" and lopnr in (select lopnr from kv3);
+quit;
+
+proc sql;
+create table cens as
+select a.lopnr, a.indate, b.indate as prisondate
+from kv3 as a
+	left join prison as b
+		on a.lopnr=b.lopnr and a.indate < b.indate
+order by a.lopnr, a.indate, b.indate;
+quit;
+
+data cens;
+set cens;
+by lopnr;
+if first.lopnr;
+run;	
+
+* Emigration from Sweden ;
+
+proc sort data=crime3.v_migration out=migrationx;
+by lopnr MDATUM;
+where MTYP='E';
+run;
+
+data migration;
+set migrationx;
+
+format date_emig yymmdd10.;
+date_emig=mdy(substr(MDATUM,5,2),1,substr(MDATUM,1,4));
+
+if date_emig=. then delete;
+run;
+
+proc sql;
+create table cens as
+select a.*, b.date_emig
+from cens as a
+	left join migration as b
+		on a.lopnr=b.lopnr and a.indate < b.date_emig
+order by a.lopnr, a.indate, b.date_emig;
+quit;
+
+data cens;
+set cens;
+by lopnr;
+if first.lopnr;
+run;
+
+* Death date ;
+
+proc sql;
+create table death as
+select lopnr, input(x_dodsdatum, yymmdd8.) as date_death format yymmdd10.
+from crime3.v_dodsdatum
+where lopnr in (select lopnr from cens);
+quit;
+
+proc sql;
+create table cens as
+select a.*, b.date_death
+from cens as a
+	left join death as b
+		on a.lopnr=b.lopnr and a.indate < b.date_death
+order by a.lopnr, a.indate;
+quit;
+
+* From potential censoring dates, select the one which occurs first ;
+
+data cens;
+set cens;
+format cens_min yymmdd10. ;
+
+cens_min=min(prisondate, date_emig, date_death);
+
+run;
+
+* join with cohort ;
+
+proc sql;
+create table kv3 as
+select a.*, b.cens_min
+from kv3 as a
+	left join cens as b
+		on a.lopnr=b.lopnr;
+quit;
+
+proc datasets library=work nolist;
+   delete cens crimes death kv kv1 kv2 migration migrationx sanctions prison;
+   quit;
+run;
+
+* Switch fu-end according to the new censoring date ;
+
+data kv3;
+set kv3;
+if cens_min ^=. and cens_min < follow_end then follow_end=cens_min;
+run;
+
+* Prepare splitting follow-up time ;
+
+* 1) Create calendar table ;
+
+* Min date in data is 1997-01-05 ;
+
+
+%macro calendar_table(start_date=  );
+%let start=%sysfunc(inputn(&start_date.,date9.)); 
+%let end=%sysfunc(intnx(year,%sysfunc(date()),0,e));
+%let n_month=%sysfunc(intck(month,&start.,&end.));
+
+proc sql;
+create table want(date num format yymmn6.,year num,month num);
+insert into want 
+%do i=0 %to &n_month.;
+ %let date=%sysfunc(intnx(month,&start.,&i.));
+ %let year=%sysfunc(year(&date.));
+ %let month=%sysfunc(month(&date.));
+ values(&date.,&year.,&month.) 
+%end;
+;
+quit;
+%mend;
+
+%calendar_table(start_date= 05jan1997 );
+
+data want;
+set want;
+format date yymmn6. ;
+run;
+
+* year-month indicators for fu start and end dates;
+
+data kv3;
+set kv3;
+format yearmonth_start yymmn6. ;
+format yearmonth_end yymmn6. ;
+
+yearmonth_start = follow_start ;
+yearmonth_end = follow_end ;
+
+run;
+
+data want2;
+set want;
+   n=input(put(date, yymmn6.), 6.);
+   put n=;
+run;
+
+data kv4;
+set kv3;
+   nx=input(put(yearmonth_start, yymmn6.), 6.);
+   put nx=;
+run;
+
+data kv4;
+set kv4;
+   ny=input(put(yearmonth_end, yymmn6.), 6.);
+   put ny=;
+run;
+
+* Split follow-up into year-month panel ;
+
+proc sql;
+create table kv5 as
+select a.*, b.n, b.date
+	from kv4 as a
+		left join want2 as b
+		on b.n <= a.ny and a.nx <= b.n ;
+quit;
+
+proc sort data=kv5; by lopnr n; run;
+
+* Calculate period start and end dates for each year-month;
+
+data kv5;
+set kv5;
+
+format period_start yymmdd10.;
+format period_end yymmdd10.;
+
+period_start=intnx('month', date, 0, 'B');
+period_end=intnx('month', date, 0, 'E');
+
+run;
+
+* fix dates for the very first and last year-month periods according to fu ;
+
+proc sort data=kv5; by lopnr period_start; run;
+
+data kv5;
+set kv5;
+by lopnr period_start;
+if first.lopnr then period_start=follow_start;
+run;
+
+proc sort data=kv5; by lopnr descending period_end; run;
+
+data kv5;
+set kv5;
+by lopnr descending period_end;
+if first.lopnr then period_end=follow_end;
+run;
+
+* new year-month indicator for the period when treatment started ;
+
+data kv5;
+set kv5;
+   ntreat=input(put(yearmonth, yymmn6.), 6.);
+   put ntreat=;
+run;
+
+proc sort data=kv5; by lopnr period_start; run;
+
+* Count length in days per period ;
+
+data kv5;
+set kv5;
+period_length = period_end-period_start;
+run;
+
+Proc Means Data = kv5 N MEAN STD MEDIAN MIN MAX Q1 Q3;
+Var period_length;
+Run;
+
+data test;
+set kv5;
+where period_length = 0;
+run;
+
+* -> if period lenght is 0, delete - these won't contribute anything and cause unessecary imbalance to the panel.
+		all of these are either at the very start of the panel or the very end, caused by the aggregating fu into
+			months;
+
+data kv5;
+set kv5;
+if period_length = 0 then delete;
+run;
+
+* check no. of periods ;
+
+proc sort data=kv5; by lopnr period_start; run;
+
+data kv5;
+set kv5;
+by lopnr period_start;
+if first.lopnr or first.period_start;
+
+retain period_no;
+
+if first.lopnr then period_no=0;
+
+period_no=period_no+1;
+
+run;
+
+proc freq data=kv5;
+tables period_no / MISSING nocol;
+run;
+
+* save basecohort ;
+
+data s2.kv_basecohort;
+set kv5;
+run;
+
+proc datasets library=work nolist;
+   delete kv3 kv4 test want want2;
+   quit;
+run;
+
+
+
+*****************************************************************
+
+* Collecting outcome data 
+
+*****************************************************************;
+
+proc sort data=kv5; by lopnr period_start; run;
+
+data base;
+set kv5;
+by lopnr;
+if first.lopnr;
+run;
+
+* acute SUD outcome ;
+
+proc sql;
+create table combined as
+select * 
+from Crime3.V_PATIENT_DIA
+where substr(DIA,1,4) in ('F100','F103','F104','F105','F110','F113','F114','F115','F120','F123','F124','F125',
+					'F130','F133','F134','F135','F140','F143','F144','F145','F150','F153','F154','F155',
+					'F160','F163','F164','F165','F180','F183','F184','F185','F190','F193','F194','F195') or
+	  substr(DIA,1,3) in ('T36','T37','T38','T39','T40','T41','T42','T43','T44','T45','T46','T47','T48','T49',
+	  				'T50','T51','T65','X40','X41','X42','X43','X44','X45','X49','Y10','Y11','Y12''Y13','Y14','Y15','Y91');
+quit;
+
+proc sql;
+create table combined as
+select *
+from combined
+where lopnr in (select lopnr from base)
+order by lopnr, datum;
+quit;
+
+* Link to base for information on whether visit was unplanned, and in which mvo ;
+
+proc sql;
+create table combined as
+select a.*, b.pvard, b.mvo
+from combined as a
+	left join Crime3.V_PATIENT_BASE as b
+	on a.lopnr=b.lopnr and a.x_pid=b.x_pid;
+quit;
+
+data combined;
+set combined;
+where pvard="2";
+run;
+
+* check mvo;
+
+proc sql;
+create table types as
+select mvo, count(*) as freq
+from combined
+group by mvo
+order by freq desc;
+quit;
+
+* restrict to 1 diagnosis per day ;
+
+proc sort data=combined; by lopnr datum; run;
+
+data combined;
+set combined;
+by lopnr datum;
+if first.lopnr or first.datum;
+fail=1;
+run;
+
+proc sql;
+create table dia as
+select lopnr, input(datum, yymmdd8.) as date_fail format yymmdd10., fail
+from combined;
+quit;
+
+* Merge with cohort ;
+
+proc sql;
+create table kv6 as
+select a.*, b.date_fail as sud_date, b.fail as sud
+from kv5 as a
+	left join dia as b
+	on a.lopnr=b.lopnr and b.date_fail <= a.period_end and a.period_start <= b.date_fail;
+quit;
+
+proc sort data=kv6; by lopnr period_start; run;
+
+data kv6;
+set kv6;
+by lopnr period_start;
+if first.lopnr or first.period_start;
+run;
+
+data kv6;
+set kv6;
+if sud=. then sud=0;
+run;
+
+PROC FREQ DATA = kv6;
+TABLES sud;
+run;
+
+PROC FREQ DATA = kv6;
+TABLES n*sud;
+run;
+
+proc datasets library=work nolist;
+   delete kv5 combined dia types;
+   quit;
+run;
+
+* Acute mental health emergency outcome ;
+
+proc sql;
+create table combined as
+select * 
+from Crime3.V_PATIENT_DIA
+where substr(DIA,1,4) in ('F310','F311','F312','F313','F314','F315','F316') or
+	  substr(DIA,1,3) in ('F23','F29','F30','F32','F38','F39','F40','F41','F43') or
+	  ('X60'<=substr(DIA,1,3)<='X84') or
+	  ('Y20'<=substr(DIA,1,3)<='Y34')
+;
+quit;
+
+proc sql;
+create table combined as
+select *
+from combined
+where lopnr in (select lopnr from base)
+order by lopnr, datum;
+quit;
+
+proc sql;
+create table combined as
+select a.lopnr, a.dia, input(a.datum, yymmdd8.) as date_fail format yymmdd10., b.pvard, b.mvo
+from combined as a
+	left join Crime3.V_PATIENT_BASE as b
+	on a.lopnr=b.lopnr and a.x_pid=b.x_pid;
+quit;
+
+data combined;
+set combined;
+where pvard="2";
+run;
+
+* restrict to 1 diagnosis per day ;
+
+proc sort data=combined; by lopnr date_fail; run;
+
+data combined;
+set combined;
+by lopnr date_fail;
+if first.lopnr or first.date_fail;
+fail=1;
+run;
+
+proc sql;
+create table kv6 as
+select a.*, b.date_fail as psych_date, b.fail as psych
+from kv6 as a
+	left join combined as b
+	on a.lopnr=b.lopnr and b.date_fail <= a.period_end and a.period_start <= b.date_fail;
+quit;
+
+proc sort data=kv6; by lopnr period_start; run;
+
+data kv6;
+set kv6;
+by lopnr period_start;
+if first.lopnr or first.period_start;
+run;
+
+data kv6;
+set kv6;
+if psych=. then psych=0;
+run;
+
+PROC FREQ DATA = kv6;
+TABLES psych;
+run;
+
+PROC FREQ DATA = kv6;
+TABLES n*psych;
+run;
+
+proc datasets library=work nolist;
+   delete combined ;
+   quit;
+run;
+
+* Acute somatic event outcome ;
+
+proc sql;
+create table s2.combined as
+select * 
+from Crime3.V_PATIENT_DIA
+where substr(DIA,1,4) in ('K250','K251','K252','K253','K260','K261','K262','K263','K270','K271','K272','K273',
+						  'K280','K281','K282','K283','K290','K291','K292','K293','K704','K702') or
+	  substr(DIA,1,3) in ('H10','I00','I01','I02','I10','I20','I21','I22','I23', 'I24','I26','I30','I33',
+						  'I46','I48','I49','I60','I61','I62','I63','I64','I70','K71','L27','N10',
+						  'N20','N21','N30','R05','R06') or
+	  ('A00'<=substr(DIA,1,3)<='B99') or
+	  ('J00'<=substr(DIA,1,3)<='J06') or
+	  ('J09'<=substr(DIA,1,3)<='J18') or
+	  ('J20'<=substr(DIA,1,3)<='J22') or
+	  ('K35'<=substr(DIA,1,3)<='K37') or
+	  ('L00'<=substr(DIA,1,3)<='L08') or
+	  ('L00'<=substr(DIA,1,3)<='L08') or
+	  ('M00'<=substr(DIA,1,3)<='M03') or
+	  ('J00'<=substr(DIA,1,3)<='J06') or
+	  ('S00'<=substr(DIA,1,3)<='S99') or
+	  ('T00'<=substr(DIA,1,3)<='T35') or
+	  ('T66'<=substr(DIA,1,3)<='T78') or
+	  ('V01'<=substr(DIA,1,3)<='V99') or
+	  ('W00'<=substr(DIA,1,3)<='X39') or
+	  ('X85'<=substr(DIA,1,3)<='Y09')
+;
+quit;
+
+proc sql;
+create table combined as
+select *
+from s2.combined
+where lopnr in (select lopnr from base)
+order by lopnr, datum;
+quit;
+
+proc sql;
+create table combined as
+select a.lopnr, a.dia, input(a.datum, yymmdd8.) as date_fail format yymmdd10., b.pvard, b.mvo
+from combined as a
+	left join Crime3.V_PATIENT_BASE as b
+	on a.lopnr=b.lopnr and a.x_pid=b.x_pid;
+quit;
+
+data combined;
+set combined;
+where pvard="2";
+run;
+
+* restrict to 1 diagnosis per day ;
+
+proc sort data=combined; by lopnr date_fail; run;
+
+data combined;
+set combined;
+by lopnr date_fail;
+if first.lopnr or first.date_fail;
+fail=1;
+run;
+
+proc sql;
+create table kv6 as
+select a.*, b.date_fail as som_date, b.fail as som
+from kv6 as a
+	left join combined as b
+	on a.lopnr=b.lopnr and b.date_fail <= a.period_end and a.period_start <= b.date_fail;
+quit;
+
+proc sort data=kv6; by lopnr period_start; run;
+
+data kv6;
+set kv6;
+by lopnr period_start;
+if first.lopnr or first.period_start;
+run;
+
+data kv6;
+set kv6;
+if som=. then som=0;
+run;
+
+PROC FREQ DATA = kv6;
+TABLES som;
+run;
+
+PROC FREQ DATA = kv6;
+TABLES n*som;
+run;
+
+proc datasets library=work nolist;
+   delete combined ;
+   quit;
+run;
+
+* Suspected crime outcome ;
+
+proc sql;
+create table susp as 
+select LOPNR, BESLUTSDATUM, X_BROTTDATUM_FROM, X_BROTTDATUM_TOM, BROTTSKOD
+from crime3.v_bra_suspect
+where lopnr in (select lopnr from base);
+quit;
+
+data susp;
+	set susp;
+	format date_susp_f date_susp_t date_susp_d date_fail yymmdd10.;
+	date_susp_f=input(X_BROTTDATUM_FROM,yymmdd8.);
+	date_susp_t=input(X_BROTTDATUM_TOM,yymmdd8.);
+	date_susp_d=input(BESLUTSDATUM,yymmdd8.);
+	crime_code=input(BROTTSKOD,?? best4.);
+	date_fail_exists=1;
+	if date_susp_f^=. then date_fail=date_susp_f;
+	else
+		do;
+			date_fail_exists=0;
+			if date_susp_t^=. then date_fail=date_susp_t;
+			else if date_susp_d^=. then date_fail=date_susp_d;
+		end;
+run;
+
+proc sort data=susp; by lopnr date_fail; run;
+
+data susp;
+set susp;
+by lopnr date_fail;
+if first.lopnr or first.date_fail;
+fail=1;
+run;
+
+proc sql;
+create table susp2 as
+select a.*, b.date_fail as crime_date, b.fail as crime
+from kv6 as a
+	left join susp as b
+	on a.lopnr=b.lopnr and b.date_fail <= a.period_end and a.period_start <= b.date_fail;
+quit;
+
+proc sort data=susp2; by lopnr period_start; run;
+
+* Take total count of recorded crimes per month ;
+
+PROC SQL;
+CREATE TABLE susp3 AS
+SELECT LOPNR, N, sum(crime) as crime
+FROM susp2
+GROUP BY LOPNR, N;
+QUIT;
+
+data susp3;
+set susp3;
+if crime=. then crime=0;
+run;
+
+proc sql;
+create table kv6 as
+select a.*, b.crime
+from kv6 as a
+	left join susp3 as b
+	on a.lopnr=b.lopnr and a.n=b.n;
+quit;
+
+PROC FREQ DATA = kv6;
+TABLES crime;
+run;
+
+proc datasets library=work nolist;
+   delete susp susp2 susp3 ;
+   quit;
+run;
+
+* Merge covariates (sex, birthyear, born in sweden vs. abroad );
+
+proc sql;
+create table covs as
+select a.lopnr, b.kon, input(b.fodelsedatum ||'15' , yymmdd8.) as birthdate format yymmdd10., b.fodelsegrupp
+from base as a
+	left join Crime3.v_individual as b 
+		on a.lopnr=b.lopnr;
+quit;
+
+data covs;
+set covs;
+if kon="2" then sex=0;
+if kon="1" then sex=1;
+run;
+
+data covs;
+set covs;
+if fodelsegrupp="0" then bg_sweden=1;
+else bg_sweden=0;
+run;
+
+proc sql;
+create table kv6 as
+select a.*, b.birthdate, b.sex, b.bg_sweden
+from kv6 as a
+	left join covs as b 
+		on a.lopnr=b.lopnr;
+quit;
+
+* Time-varying age variable ;
+
+data kv6;
+set kv6;
+age=(period_start-birthdate)/365.25;
+age=round(age,0.01);
+run;
+
+proc sort data=kv6; by lopnr period_start; run;
+
+* Create indicator variable for when the treatment ended ;
+
+data kv6;
+set kv6;
+if outdate < period_end then treat_end = 1;
+else treat_end = 0;
+run;
+
+* Save intermediate file ;
+
+data s2.kv_outcome;
+set kv6;
+run;
+
+*******************************************************************
+
+* 2) Collapse monthly data into quarter years ;
+
+data kv6;
+set kv6;
+quarter = date;
+quarter_treat=yearmonth; 
+format quarter yyq6. quarter_treat yyq6.;
+run;
+
+PROC SQL;
+CREATE TABLE kv7 AS
+SELECT  lopnr, put(quarter, yyq6.) as quarterx, quarter, put(quarter_treat, yyq6.) as quarter_treatx, quarter_treat,
+sud, psych, som, crime, period_length, treat_length, treat_end, age, sex, bg_sweden  
+FROM kv6 ;
+QUIT;
+
+PROC SQL;
+CREATE TABLE kv8 AS
+SELECT LOPNR, QUARTERX, MAX(quarter) as quarter format yyq6., MAX(quarter_treat ) as quarter_treat format yyq6., 
+		MAX(quarter_treatx) as quarter_treatx, MAX(sud) as sud, MAX(psych) as psych, MAX(som) as som, SUM(crime) as crime, 
+		SUM(period_length) as period_length, MAX(treat_length) as treat_length, MAX(treat_end) as treat_end,
+		MIN(age) as age, MAX(sex) as sex, MAX(bg_sweden) as bg_sweden
+FROM kv7
+GROUP BY LOPNR, QUARTERX;
+QUIT;
+
+* Next create time variable to use in DID model ;
+
+data kv8;
+set kv8;
+quarterxx = input(strip(quarterx),yyq6.);
+format quarterxx yyq6.;
+run;
+
+proc sort data=kv8; by quarterxx; run;
+
+*First quarter is 1997Q1;
+
+Data kv8;
+set kv8;
+start_time = '01JAN1997'd; 
+format start_time yyq6.;
+run;
+
+* Timevar is quarters since 1997Q1;
+
+data kv8;
+set kv8;
+timevar_q = intck("quarter",start_time,quarterxx,'c');
+run;
+
+* Timevar for quarter of treatment ;
+
+data kv8;
+set kv8;
+quarter_treatxx = input(strip(quarter_treatx),yyq6.);
+format quarter_treatxx yyq6.;
+run;
+
+data kv8;
+set kv8;
+treattime_q = intck("quarter",start_time,quarter_treatxx,'c');
+run;
+
+proc sort data=kv8; by lopnr quarterxx; run;
+
+* Take relevant vars from dataset for analysis ;
+
+proc sql;
+create table kv9 as
+select lopnr, timevar_q as time, treattime_q as gvar, quarterx as quarter, quarter_treatx as quarter_treat, 
+			sud, psych, som, crime, period_length, treat_length, treat_end, age, sex, bg_sweden
+from kv8;
+quit;
+
+* check freqs per cohort ;
+
+proc sql;
+create table freqs as
+select quarter_treat, gvar, count(distinct lopnr) as freq
+from kv9
+group by quarter_treat, gvar;
+quit;
+
+* Look at outcome data per treatment cohort ;
+
+PROC FREQ DATA = kv9;
+TABLES quarter_treat*sud;
+run;
+
+PROC FREQ DATA = kv9;
+TABLES quarter_treat*psych;
+run;
+
+PROC FREQ DATA = kv9;
+TABLES quarter_treat*som;
+run;
+
+PROC FREQ DATA = kv9;
+TABLES quarter_treat*crime;
+run;
+
+* Look at outcome data per quarter ;
+
+PROC FREQ DATA = kv9;
+TABLES quarter*sud;
+run;
+
+PROC FREQ DATA = kv9;
+TABLES quarter*psych;
+run;
+
+PROC FREQ DATA = kv9;
+TABLES quarter*som;
+run;
+
+PROC FREQ DATA = kv9;
+TABLES quarter*crime;
+run;
+
+* Save final dataset ;
+
+proc sort data=kv9; by LOPNR time; run;
+
+
+data s2.kv_fin;
+set kv9;
+run;
