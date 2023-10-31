@@ -1033,51 +1033,6 @@ select lopnr, timevar_q as time, treattime_q as gvar, quarterx as quarter, quart
 from kv8;
 quit;
 
-* check freqs per cohort ;
-
-proc sql;
-create table freqs as
-select quarter_treat, gvar, count(distinct lopnr) as freq
-from kv9
-group by quarter_treat, gvar;
-quit;
-
-* Look at outcome data per treatment cohort ;
-
-PROC FREQ DATA = kv9;
-TABLES quarter_treat*sud;
-run;
-
-PROC FREQ DATA = kv9;
-TABLES quarter_treat*psych;
-run;
-
-PROC FREQ DATA = kv9;
-TABLES quarter_treat*som;
-run;
-
-PROC FREQ DATA = kv9;
-TABLES quarter_treat*crime;
-run;
-
-* Look at outcome data per quarter ;
-
-PROC FREQ DATA = kv9;
-TABLES quarter*sud;
-run;
-
-PROC FREQ DATA = kv9;
-TABLES quarter*psych;
-run;
-
-PROC FREQ DATA = kv9;
-TABLES quarter*som;
-run;
-
-PROC FREQ DATA = kv9;
-TABLES quarter*crime;
-run;
-
 * Save final dataset ;
 
 proc sort data=kv9; by LOPNR time; run;
