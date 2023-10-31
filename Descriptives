@@ -1,0 +1,146 @@
+/* DIFF-IN-DIFF ANALYSIS OF CONTRACT TREATMENT - DESCRIPTIVES */
+
+/******************************************************
+* Name: Descriptives_DID
+* Created: 2023-07-04 by S Virtanen / MEB
+* Operating program: SAS 9.4
+*******************************************************
+*/
+
+*******************************************;
+
+* Background characteristics for the cohort ;
+
+%compile(infile=s2.kv_outcome);
+
+PROC FREQ DATA = s2.kv_covs;
+TABLES sex bg_sweden edu_cat chapterV anysud anypois suicide vcrime anycrime prison;
+run;
+
+Proc Means Data = s2.kv_covs N MEAN STD MEDIAN MIN MAX Q1 Q3;
+Var age year;
+Run;
+
+* Freqs for each treatment cohort ;
+
+data base;
+set s2.kv_fin;
+run;
+
+proc sort data=base; by LOPNR time; run;
+
+data base2;
+set base;
+by lopnr;
+if first.lopnr;
+run;
+
+PROC FREQ DATA = base2;
+TABLES quarter_treat;
+run;
+
+* Treatment length (subcohort for sanctions starting from 2003);
+
+data tvcohort;
+set s2.kv_outcome_tvtreat;
+run;
+
+proc sql;
+select count(distinct lopnr)
+from tvcohort;
+quit;
+
+*n=8880;
+
+proc sort data=tvcohort; by LOPNR period_start; run;
+
+data tvcohort2;
+set tvcohort;
+by lopnr;
+if first.lopnr;
+run;
+
+Proc Means Data = tvcohort2 N MEAN STD MEDIAN MIN MAX Q1 Q3;
+Var exit_diff;
+Run;
+
+* median = 365 (365-396);
+
+* How many sanctions end during follow-up? ;
+
+proc sql;
+select count(distinct lopnr)
+from tvcohort
+where exit_date <= follow_end;
+quit;
+
+* ^= 7930 (89,3%)
+
+* How many people end up in prison during post-treatment period?;
+
+%return_prison(infile=s2.kv_basecohort);
+
+PROC FREQ DATA = cens;
+TABLES prison;
+run;
+
+* 24% (n=2939) is back in prison within 2 years
+
+* Calculate proportion of fu-time pre-treatment that is spent as client of correctional services
+	vs. in "freedom" ;
+
+
+data infile;
+set s2.kv_outcome(keep=lopnr follow_start follow_end treat_start);
+run;
+
+proc sort data=infile; by LOPNR follow_start; run;
+
+data infile;
+set infile;
+by lopnr;
+if first.lopnr;
+run;
+
+%pretime(infile=infile);
+
+Proc Means Data = pretime N MEAN STD MEDIAN MIN MAX Q1 Q3;
+Var alltime;
+Run;
+
+PROC FREQ DATA = pretime;
+TABLES time_cat;
+run;
+
+Proc Means Data = pretime N MEAN STD MEDIAN MIN MAX Q1 Q3;
+Var othertime;
+Run;
+
+Proc Means Data = pretime N MEAN STD MEDIAN MIN MAX Q1 Q3;
+Var prisontime;
+Run;
+
+
+* Check which types of somatic diagnoses contribute to increasing rate of events in the pre-period;
+
+%somdias(infile=infile);
+
+proc summary data=somdias nway;
+   class period_no;
+   var external infect otherdia;
+   output out=summary mean=;
+run;
+
+ods graphics / imagefmt=pdf;
+ods pdf file = 'Z:\Suvi\DID kontraktsvård\somdias.pdf';
+
+proc sgplot data=summary;
+   series x=period_no y=external / legendlabel="External causes";
+   series x=period_no y=infect / legendlabel="Infectious disease";
+   series x=period_no y=otherdia / legendlabel="Other disease";
+   xaxis values=(1 to 24 by 1) label="Months prior to contract treatment";
+   yaxis values=(0 to 0.025 by .005) label="Prevalence of diagnoses";
+   format external infect otherdia percent6.;
+run;
+
+ods pdf close;
