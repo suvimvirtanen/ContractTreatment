@@ -1,0 +1,971 @@
+/* DIFF-IN-DIFF ANALYSIS OF CONTRACT TREATMENT - MACROS */
+
+/******************************************************
+* Name: Macros_DID
+* Created: 2023-07-04 by S Virtanen / MEB
+* Operating program: SAS 9.4
+*******************************************************
+*/
+
+
+*************************************
+
+* DID MACROS   **********************
+
+*************************************;
+
+
+* Pre-treatment time spent as client in correctional services vs. free ;
+
+%macro pretime(infile=);
+
+* Collect all sanctions ;
+
+proc sql;
+create table sanctions as
+select lopnr, datumborj, input(datumborj, yymmdd8.) as indate format yymmdd10., input(datumslut, yymmdd8.) as outdate format yymmdd10.,
+pafoljd, foreskrift, huvudbrott
+from Crime3.V_krim_pafoljd
+where lopnr in (select lopnr from &infile.)
+order by lopnr, datumborj
+;
+quit;
+
+* Select sanctions that occur between fu start and trt start ;
+
+proc sql;
+create table sanctions2 as
+select a.*, b.*
+from infile as a
+	left join sanctions as b
+	on a.lopnr=b.lopnr and
+	   a.follow_start < b.indate and
+	   a.treat_start > b.outdate;
+quit;
+
+data sanctions2;
+set sanctions2;
+if outdate=. then delete;
+run;
+
+* lenght of sanction ;
+
+data sanctions2;
+set sanctions2;
+sanct_length=outdate-indate;
+run;
+
+data sanctions2;
+set sanctions2;
+if sanct_length <= 0 then delete;
+run;
+
+* separate prison from other sanction time ;
+
+data prison;
+set sanctions2;
+where pafoljd="FANGELSE";
+run;
+
+data othersanct;
+set sanctions2;
+where pafoljd^="FANGELSE";
+run;
+
+* Collapse data and calculate total no. of days spent on different types of sanctions;
+
+proc sql;
+create table prison2 as
+select lopnr, SUM(sanct_length) as sanct_length
+from prison
+group by lopnr;
+quit;
+
+proc sql;
+create table othersanct2 as
+select lopnr, SUM(sanct_length) as sanct_length
+from othersanct
+group by lopnr;
+quit;
+
+* join with original cohort ;
+
+proc sql;
+create table pretime as
+select a.*, b.sanct_length as prisontime, c.sanct_length as othertime
+from &infile. as a
+	left join prison2 as b 
+		on a.lopnr=b.lopnr
+	left join othersanct2 as c
+		on a.lopnr=c.lopnr;
+quit;
+
+* recode missings ;
+
+data pretime;
+set pretime;
+if prisontime=. then prisontime=0;
+if othertime=. then othertime=0;
+run;
+
+* total time spent in sanctions ;
+
+data pretime;
+set pretime;
+alltime = prisontime+othertime;
+run;
+
+* categorical ;
+
+data pretime;
+set pretime;
+if alltime = 0 then time_cat=0;
+if alltime > 0 and alltime < 183 then time_cat=1;
+if alltime > 182 then time_cat=2;
+run;
+
+proc datasets library=work nolist;
+   delete othersanct othersanct2 prison prison2 sanctions sanctions2;
+   quit;
+run;
+
+%mend;
+
+
+*  Distribution of different types of somatic diagnoses pre-treatment ;
+
+
+%macro somdias(infile=);
+
+proc sql;
+create table combined as
+select *
+from s2.combined
+where lopnr in (select lopnr from &infile.)
+order by lopnr, datum;
+quit;
+
+proc sql;
+create table combined as
+select a.lopnr, a.dia, input(a.datum, yymmdd8.) as date_fail format yymmdd10., b.pvard, b.mvo
+from combined as a
+	left join Crime3.V_PATIENT_BASE as b
+	on a.lopnr=b.lopnr and a.x_pid=b.x_pid;
+quit;
+
+data combined;
+set combined;
+where pvard="2";
+run;
+
+proc sort data=combined; by lopnr date_fail; run;
+
+data combined;
+set combined;
+by lopnr date_fail;
+if first.lopnr or first.date_fail;
+fail=1;
+run;
+
+proc sql;
+create table xx as
+select a.*, b.date_fail as som_date, b.fail as som, b.dia
+from s2.kv_basecohort as a
+	left join combined as b
+	on a.lopnr=b.lopnr and b.date_fail <= a.period_end and a.period_start <= b.date_fail;
+quit;
+
+proc sort data=xx; by lopnr period_start; run;
+
+data xx;
+set xx;
+by lopnr period_start;
+if first.lopnr or first.period_start;
+run;
+
+data xxx;
+set xx;
+
+if ('S00'<=substr(DIA,1,3)<='S99') or
+	  ('T00'<=substr(DIA,1,3)<='T35') or
+	  ('T66'<=substr(DIA,1,3)<='T78') or
+	  ('V01'<=substr(DIA,1,3)<='V99') or
+	  ('W00'<=substr(DIA,1,3)<='X39') or
+	  ('X85'<=substr(DIA,1,3)<='Y09') then external = 1;
+
+else external = 0;
+run;
+
+data xxx;
+set xxx;
+
+if ('A00'<=substr(DIA,1,3)<='B99') then infect = 1;
+else infect=0;
+run;
+
+data xxx;
+set xxx;
+if dia^=" " and external=0 and infect=0 then otherdia=1;
+else otherdia=0;
+run;
+
+data somdias;
+set xxx;
+if period_no > 24 then delete;
+run;
+
+proc datasets library=work nolist;
+   delete combined xx xxx;
+   quit;
+run;
+
+%mend;
+
+
+* Compile data on background characteristics of the cohort ;
+
+%macro compile(infile=);
+
+data infile;
+set &infile.;
+where ntreat=n;
+run;
+
+/* First psych diagnoses from the register */
+
+proc sql;
+create table mwork.diagn_temp as
+select lopnr, dia as dia, input(datum, yymmdd8.) as date format yymmdd10.
+from crime3.V_patient_dia
+where ((('F00'<=substr(dia,1,3)<='F99') or ('X40'<=substr(dia,1,3)<='X49') or ('T36'<=substr(dia,1,3)<='T50')) or
+(substr(DIA,1,4)='T510') or ('X60'<=substr(DIA,1,3)<='X84') or ('Y10'<=substr(DIA,1,3)<='Y34'))
+& lopnr in (select lopnr from infile)
+
+order by lopnr, date
+;
+quit;
+
+proc sql;
+create table diagn as
+select a.lopnr, a.treat_start, b.dia, b.date
+from INFILE as a
+     left join mwork.diagn_temp as b on a.lopnr=b.lopnr
+	 order by lopnr
+;
+quit;
+
+data diagn2;
+set diagn;
+
+	/*V Mental and behavioural disorder */ 
+if ('F00'<=substr(DIA,1,3)<='F99')
+then chapterV=1;
+
+	/*depression*/
+if ('F32'<=substr(DIA,1,3)<='F39')
+then depression=1;
+
+	/*bipolar*/
+if(substr(DIA,1,3) in ('F30' 'F31'))
+then bipolar=1;
+
+	/*anxiety*/
+if (substr(DIA,1,2) = 'F4')
+then anxiety=1;
+
+	/*psychotic disorder*/
+if (substr(DIA,1,2)='F2')
+then psychotic=1;
+
+	/*substance use disorder excl. alcohol */
+if ('F10'< substr(DIA,1,3)<='F19')
+then SUD=1;
+
+	/*eating disorder */
+if (substr(DIA,1,3) in ('F50'))
+then eat=1;
+
+	/*personality disorder*/
+if (substr(DIA,1,3) in ('F60' 'F61'))
+then personality=1;
+
+	/*ADHD*/
+if (substr(DIA,1,3)='F90')
+then adhd=1;
+
+	/*other developmental or childhood disorder*/
+if ('F70'<=substr(DIA,1,3)<='F98' and substr(DIA,1,3)^='F90' and substr(DIA,1,3)^='F91' and substr(DIA,1,3)^='F84')
+then developmental=1;
+
+    /*autism spectrum disorder (ASD)*/
+if (substr(DIA,1,3)='F84')
+then asd=1;
+
+   /*conduct disorder / oppositional defiant disorder*/
+if (substr(DIA,1,3)='F91')
+then cd=1;
+
+   /*alcohol use disorder*/
+if (substr(DIA,1,3)='F10')
+then alc=1;
+
+	/* Poisoning by substances excluding alcohol */ 
+if ('X40'<=substr(DIA,1,3)<='X44' or 'X46'<=substr(DIA,1,3)<='X49' or 'T36'<=substr(DIA,1,3)<='T50') and substr(DIA,1,4) not in ('T510')
+then pois_gen=1;
+
+	/* Poisoning by alcohol */
+if (substr(DIA,1,3)='X45') or (substr(DIA,1,4)='T510')
+then pois_alc=1;
+
+	/*Suicide */
+if ('X60'<=substr(DIA,1,3)<='X84') or ('Y10'<=substr(DIA,1,3)<='Y34')
+then suicide=1;
+
+
+array set0 [16] chapterV--suicide;
+do i=1 to 16;
+	if set0[i]= . then set0[i]=0;
+	if date > '31DEC2020'd then set0[i]=0; 
+	if date > treat_start then set0[i]=0; 
+end;
+
+drop i;
+
+run;
+
+proc sql;
+create table diagn3 as
+select 	max(lopnr) as lopnr, max(chapterV) as chapterV, max(depression) as depression, max(bipolar) as bipolar, max(anxiety) as anxiety, 
+		max(psychotic) as psychotic, max(SUD) as SUD, max(eat) as eat, max(personality) as personality, max(ADHD) as ADHD, max(developmental) as developmental,
+		max(asd) as asd, max(cd) as cd, max(alc) as alc, max(pois_gen) as pois_gen, max(pois_alc) as pois_alc,
+		max(suicide) as suicide
+from 	diagn2
+group by lopnr;
+quit;
+
+proc sql;
+create table covs as
+select a.lopnr, a.treat_start, a.sex, a.bg_sweden, a.age, b.chapterV, b.anxiety, b.psychotic, b.sud, b.eat, b.personality, b.adhd, b.developmental, b.asd, b.cd, b.alc, b.pois_gen,
+b.pois_alc, b.suicide
+from infile as a
+left join diagn3 as b
+	on a.lopnr=b.lopnr;
+quit;
+
+data covs;
+set covs;
+
+if sud=1 | alc=1 then anysud=1;
+else anysud=0;
+
+if pois_alc=1 | pois_gen=1 then anypois=1;
+else anypois=0;
+
+run;
+
+proc datasets lib=work nolist;  
+delete infile diagn diagn2 diagn3; 
+quit; 
+run; 
+
+/* Education */
+
+data infile;
+set covs (keep=lopnr treat_start);
+year=year(treat_start);
+run;
+
+%macro select(year=);
+proc sql;
+create table edu&year as
+select lopnr, sun2000niva_old as edu
+from crime3.v_lisa&year
+where lopnr in (select lopnr from infile);
+quit;
+
+data edu&year;
+set edu&year;
+year=&year;
+run;
+
+%mend;
+
+%select(year=1990);
+%select(year=1991);
+%select(year=1992);
+%select(year=1993);
+%select(year=1994);
+%select(year=1995);
+%select(year=1996);
+%select(year=1997);
+%select(year=1998);
+%select(year=1999);
+%select(year=2000);
+%select(year=2001);
+%select(year=2002);
+%select(year=2003);
+%select(year=2004);
+%select(year=2005);
+%select(year=2006);
+%select(year=2007);
+%select(year=2008);
+%select(year=2009);
+%select(year=2010);
+%select(year=2011);
+%select(year=2012);
+
+data all_edu;
+set edu1990 edu1991 edu1992 edu1993 edu1994 edu1995 edu1996 edu1997 edu1998 edu1999
+edu2000 edu2001 edu2002 edu2003 edu2004 edu2005 edu2006 edu2007 edu2008 edu2009 edu2010 edu2011 edu2012;
+
+run;
+
+data all_edu; 
+set all_edu;
+if edu = ' ' or edu='*' then delete;
+run;
+
+proc sort data=all_edu; by lopnr edu year; run;
+
+proc sql;
+create table edufin as
+select a.lopnr, a.year, b.year as eduyear, b.edu
+from infile as a
+	left join all_edu as b
+	on a.lopnr=b.lopnr and b.year <= a.year;
+quit; 
+
+proc sort data=edufin; by lopnr descending eduyear; run;
+
+data edufin;
+set edufin;
+by lopnr;
+if first.lopnr;
+run;
+
+data edufin;
+set edufin;
+if edu='1' or edu='2' then edu_cat=0;
+if edu='3' or edu='4' then edu_cat=1;
+if edu='5' or edu='6' or edu='7' then edu_cat=2;
+if edu=. then edu_cat=99;
+run;
+
+proc sql;
+create table covs as
+select a.*, b.edu_cat
+from covs as a
+	left join edufin as b
+	on a.lopnr=b.lopnr;
+quit;
+
+proc datasets lib=work nolist;  
+delete all_edu edu1990 edu1991 edu1992 edu1993 edu1994 edu1995 edu1996 edu1997 edu1998 edu1999
+edu2000 edu2001 edu2002 edu2003 edu2004 edu2005 edu2006 edu2007 edu2008 edu2009 edu2010 edu2011 edu2012 edufin
+infile; 
+quit; 
+run; 
+
+
+/* Previous convictions */
+
+data infile;
+set covs (keep=lopnr treat_start);
+run;
+
+proc sql;
+create table crimes0 as
+select a.lopnr, a.treat_start, b.besltdat, b.b_from, b.b_tom, b.blkod, b.blkap, b.blpar
+from infile as a, crime3.v_bra_crime as b 
+where a.lopnr=b.lopnr;
+quit;
+
+data vcrimes1;
+set crimes0;
+/* Derive date of crime - if start date of crime not available, use end date, else use date of conviction */
+format date_conv date_start date_end date_fail yymmdd10.;
+date_conv=input(BESLTDAT, yymmdd8.);
+date_start=input(B_FROM, yymmdd8.);
+date_end=input(B_TOM, yymmdd8.);
+
+if date_start^=. then
+        do;
+		    date_fail=date_start;
+			date_fail_exists=1;
+		end;
+	else
+	    do;
+		    date_fail_exists=0;
+			if date_end^=. then date_fail=date_end;
+			else if date_conv^=. then date_fail=date_conv;
+		end;
+/* Violent crime codes*/
+if		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='03' and substr(BLPAR,1,3)='001' or
+		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='03' and substr(BLPAR,1,3)='002' or
+		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='03' and substr(BLPAR,1,3)='003' or
+		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='03' and substr(BLPAR,1,3)='005' or
+		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='03' and substr(BLPAR,1,3)='006' or
+		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='04' and substr(BLPAR,1,3)='001' or
+		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='04' and substr(BLPAR,1,3)='002' or
+		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='04' and substr(BLPAR,1,3)='004' or
+		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='04' and substr(BLPAR,1,4)='004A' or
+		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='04' and substr(BLPAR,1,3)='005' or
+		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='04' and substr(BLPAR,1,3)='007' or
+		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='08' and substr(BLPAR,1,3)='005' or
+		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='08' and substr(BLPAR,1,3)='006' or
+		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='13' and substr(BLPAR,1,3)='001' or
+		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='13' and substr(BLPAR,1,3)='002' or
+		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='17' and substr(BLPAR,1,3)='001' or
+		substr(BLKOD,1,3)='BRB' and substr(BLKAP,1,2)='17' and substr(BLPAR,1,3)='002'
+then 	vcrime=1;
+else 	vcrime=0;
+anycrime=1;
+run;
+
+proc sort data=vcrimes1; by lopnr date_fail; run;
+
+data vcrimes2;
+set vcrimes1;
+if date_fail > treat_start then delete;
+run;
+
+proc sql;
+create table sumcrime as
+select lopnr, SUM(vcrime) as vcrimesum, SUM(anycrime) as anycrimesum
+from vcrimes2
+group by lopnr
+order by lopnr;
+quit;
+
+proc sql;
+create table covs as
+select a.*, b.vcrimesum, b.anycrimesum
+from covs as a
+	left join sumcrime as b
+	on a.lopnr=b.lopnr;
+quit;
+
+data covs;
+set covs;
+if vcrimesum=. then vcrimesum=0;
+if anycrimesum=. then anycrimesum=0;
+run;
+
+data covs;
+set covs;
+
+if vcrimesum=0 then vcrime=0;
+if (vcrimesum > 0 & vcrimesum < 6) then vcrime=1;
+if vcrimesum > 5 then vcrime=2;
+
+if anycrimesum=1 then anycrime=0;
+if (anycrimesum > 1 & anycrimesum < 11) then anycrime=1;
+if anycrimesum > 10 then anycrime=2;
+
+run;
+
+
+proc datasets lib=work nolist;  
+delete crimes0 sumcrime vcrimes1 vcrimes2
+infile; 
+quit; 
+run; 
+
+/* previous imprisonments */
+
+data infile;
+set covs (keep=lopnr treat_start);
+run;
+
+proc sql;
+create table sanctions as
+select lopnr, datumborj, input(datumborj, yymmdd8.) as indate format yymmdd10., input(datumslut, yymmdd8.) as outdate format yymmdd10.,
+pafoljd, foreskrift, huvudbrott
+from Crime3.V_krim_pafoljd
+where lopnr in (select lopnr from infile) and pafoljd="FANGELSE";
+quit;
+
+proc sql;
+create table sanctions1 as
+select a.*, b.indate
+from infile as a
+	left join sanctions as b
+	on a.lopnr=b.lopnr and b.indate < a.treat_start;
+quit;
+
+proc sort data=sanctions1; by lopnr treat_start indate; run;
+
+data sanctions1;
+set sanctions1;
+by lopnr;
+if first.lopnr;
+run;
+
+data sanctions1;
+set sanctions1;
+if indate^=. then prison=1;
+else prison=0;
+run;
+
+proc sql;
+create table covs as
+select a.*, b.prison
+from covs as a
+	left join sanctions1 as b
+	on a.lopnr=b.lopnr;
+quit;
+
+proc datasets lib=work nolist;  
+delete sanctions sanctions1
+infile; 
+quit; 
+run; 
+
+data s2.kv_covs;
+set covs;
+run;
+
+data s2.kv_covs;
+set s2.kv_covs;
+year=year(treat_start);
+run;
+
+%mend;
+
+
+%macro return_prison(infile=);
+
+data base;
+set &infile;
+run;
+
+proc sort data=base; by lopnr period_start; run;
+
+data base;
+set base;
+by lopnr;
+if first.lopnr;
+run;
+
+proc sql;
+create table base2 as
+select lopnr, treat_start, follow_end
+from base 
+where lopnr in (select lopnr from s2.kv_fin);
+quit;
+
+* Imprisonments;
+
+
+proc sql;
+create table prison as
+select lopnr, input(datumborj, yymmdd8.) as indate format yymmdd10., input(datumslut, yymmdd8.) as outdate format yymmdd10.,
+pafoljd, foreskrift, huvudbrott
+from Crime3.V_krim_pafoljd
+where pafoljd="FANGELSE" and lopnr in (select lopnr from base2)
+;
+quit;
+
+proc sql;
+create table cens as
+select a.lopnr, a.treat_start, a.follow_end, b.indate as prisondate
+from base2 as a
+	left join prison as b
+		on a.lopnr=b.lopnr and a.treat_start < b.indate and b.indate <= a.follow_end
+order by a.lopnr, a.treat_start, b.indate;
+quit;
+
+data cens;
+set cens;
+by lopnr;
+if first.lopnr;
+run;
+
+data cens;
+set cens;
+if prisondate ^=. then prison=1;
+else prison=0;
+run;
+
+%mend;
+
+
+
+*************************************
+
+* WITHIN MACROS   *******************
+
+*************************************;
+
+
+
+* Time between sanctions ;
+
+%macro mean_prescr(outp=);
+
+proc sql;
+create table meds0 as
+select lopnr, fu_start as date
+from cohort;
+quit;
+
+proc sort data=meds0; by lopnr date; run;
+
+data meds0;
+set meds0;
+by lopnr date;
+if first.lopnr or first.date;
+retain presc_no;
+if first.lopnr then presc_no=0;
+presc_no=presc_no+1;
+run;
+
+proc sort data=meds0; by lopnr descending date; run;
+
+data meds1;
+set meds0;
+by lopnr;
+if first.lopnr;
+run;
+
+data meds1;
+set meds1;
+if presc_no > 1 ;
+run;
+
+proc sql;
+create table meds2 as
+select *
+from meds0
+where lopnr in (select lopnr from meds1);
+quit;
+
+proc sort data=meds2; by lopnr descending date; run;
+
+data meds3;
+set meds2;
+by lopnr descending date;
+format nextdate yymmdd10.;
+nextdate=lag(date);
+if first.lopnr then nextdate=date;
+if first.date;
+run;
+
+proc sort data=meds3; by lopnr date; run;
+
+data meds4;
+set meds3;
+by lopnr date;
+if last.lopnr then nextdate=.;
+run;
+
+data meds4;
+set meds4;
+time_days=nextdate-date;
+run;
+
+ods output Summary=&outp; 
+PROC MEANS DATA=meds4 MEAN MEDIAN STD Q1 Q3;
+ VAR time_days;
+proc print data=&outp noobs;
+run;
+
+proc datasets lib=work nolist;  
+delete meds0 meds1 meds2 meds3 meds4; 
+quit; 
+run; 
+
+%mend;
+
+
+%macro reg1(outcome=);
+
+proc phreg data=cohort covsandwich(aggregate) nosummary;
+   class group(param=ref ref='0') ; 
+   model fu_time_&outcome.*fail_&outcome.(0)=group age year / risklimits;
+   strata lopnr;
+   id lopnr;
+run;
+
+proc phreg data=cohort covsandwich(aggregate) nosummary;
+   class group(param=ref ref='1') ; 
+   model fu_time_&outcome.*fail_&outcome.(0)=group age year / risklimits;
+   strata lopnr;
+   id lopnr;
+run;
+
+%mend;
+
+
+%macro reg2(outcome=);
+
+proc phreg data=cohort1 covsandwich(aggregate) nosummary;
+   class group(param=ref ref='0') alc(param=ref ref='0') drugs(param=ref ref='0') ; 
+   model fu_time_&outcome.*fail_&outcome.(0)=group alc drugs age year / risklimits;
+   strata lopnr;
+   id lopnr;
+run;
+
+proc phreg data=cohort1 covsandwich(aggregate) nosummary;
+   class group(param=ref ref='1') alc(param=ref ref='0') drugs(param=ref ref='0'); 
+   model fu_time_&outcome.*fail_&outcome.(0)=group alc drugs age year / risklimits;
+   strata lopnr;
+   id lopnr;
+run;
+
+%mend;
+
+
+%macro reg3(outcome=);
+
+proc phreg data=cohort2 covsandwich(aggregate) nosummary;
+   class group(param=ref ref='0') alc(param=ref ref='0') drugs(param=ref ref='0') housing(param=ref ref='2')
+		 occup(param=ref ref='5'); 
+   model fu_time_&outcome.*fail_&outcome.(0)=group alc drugs housing occup age year / risklimits;
+   strata lopnr;
+   id lopnr;
+run;
+
+proc phreg data=cohort2 covsandwich(aggregate) nosummary;
+   class group(param=ref ref='1') alc(param=ref ref='0') drugs(param=ref ref='0') housing(param=ref ref='2')
+		 occup(param=ref ref='5'); 
+   model fu_time_&outcome.*fail_&outcome.(0)=group alc drugs housing occup age year / risklimits;
+   strata lopnr;
+   id lopnr;
+run;
+
+%mend;
+
+
+%macro reg4(outcome=);
+
+proc phreg data=cohort3 covsandwich(aggregate) nosummary;
+   class group(param=ref ref='0') alc(param=ref ref='0') drugs(param=ref ref='0') housing(param=ref ref='2')
+		 new_occup(param=ref ref='4') risk(param=ref ref='0'); 
+   model fu_time_&outcome.*fail_&outcome.(0)=group alc drugs housing new_occup risk age year / risklimits;
+   strata lopnr;
+   id lopnr;
+run;
+
+proc phreg data=cohort3 covsandwich(aggregate) nosummary;
+   class group(param=ref ref='1') alc(param=ref ref='0') drugs(param=ref ref='0') housing(param=ref ref='2')
+		 new_occup(param=ref ref='4') risk(param=ref ref='0'); 
+   model fu_time_&outcome.*fail_&outcome.(0)=group alc drugs housing new_occup risk age year / risklimits;
+   strata lopnr;
+   id lopnr;
+run;
+
+%mend;
+
+
+
+%macro tv_superv(outcome=, outdat=);
+
+data cohort;
+set s2.kv_within_superv;
+run;
+
+data cohort;
+set cohort;
+format svis_end yymmdd10.;
+if exit_date < fu_end_&outcome. then svis_end=exit_date;
+run;
+
+data group1;
+set cohort;
+where svis_end=.;
+run;
+
+data group2;
+set cohort;
+where svis_end ^=. ;
+run;
+
+data gg;
+set group2 group2;
+run;
+
+proc sort data=gg; by lopnr fu_start; run;
+
+data gg2;
+set gg;
+format start stop yymmdd10.;
+by lopnr fu_start;
+if first.lopnr or first.fu_start then start=fu_start;
+if first.lopnr or first.fu_start then stop=svis_end;
+run;
+
+proc sort data=gg2; by lopnr descending fu_start; run;
+
+data gg2;
+set gg2;
+format start stop yymmdd10.;
+by lopnr descending fu_start;
+if last.lopnr or last.fu_start then start=svis_end;
+if last.lopnr or last.fu_start then stop=fu_end_&outcome.;
+run;
+
+proc sort data=gg2; by lopnr fu_start; run;
+
+data gg3;
+set gg2;
+format zeropoint yymmdd10.;
+retain zeropoint;
+by lopnr fu_start;
+if first.lopnr or first.fu_start then zeropoint=fu_start;
+run;
+
+data gg3;
+set gg3;
+entry_tr=start-zeropoint;
+exit_tr=stop-zeropoint;
+run;
+
+proc sort data=gg3; by lopnr fu_start; run;
+
+data gg4;
+set gg3;
+by lopnr fu_start;
+if first.lopnr or first.fu_start then superv=1;
+else superv=0;
+run;
+
+data gg4;
+set gg4;
+if date_fail_&outcome. ^=. and date_fail_&outcome. => start and date_fail_&outcome. <= stop then fail=1;
+else fail=0;
+run;
+
+data group1;
+set group1;
+entry_tr=0;
+exit_tr=fu_end_&outcome.-fu_start;
+superv=1;
+fail=fail_&outcome.;
+run;
+
+data &outdat.;
+set group1(keep=lopnr fu_start entry_tr exit_tr fail superv group age year) 
+gg4(keep=lopnr fu_start entry_tr exit_tr fail superv group age year);
+run;
+
+proc sort data=&outdat.; by lopnr fu_start; run;
+
+proc datasets lib=work nolist;  
+delete group1 group2 gg gg2 gg3 gg4 cohort; 
+quit; 
+run; 
+
+%mend;
+
+
+%macro within_tvsuperv(cohort= );
+
+proc phreg data=&cohort. covsandwich(aggregate) nosummary;
+   class group(param=ref ref='0') superv(param=ref ref='0'); 
+   model (entry_tr, exit_tr)*fail(0)=group superv age year / risklimits;
+   strata lopnr;
+   id lopnr;
+run;
+
+%mend;
