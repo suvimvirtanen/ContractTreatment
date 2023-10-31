@@ -1,0 +1,853 @@
+****************************************************************************;
+
+/* WITHIN-INDIVIDUAL ANALYSIS OF KV VS. OTHER SANCTIONS */
+
+/******************************************************
+* Name: Get_Data_Within_Analysis
+* Created: 2023-01-27 by S Virtanen / MEB
+* Operating program: SAS 9.4
+*******************************************************
+*/
+
+* Select id numbers for the did-cohort;
+
+data base;
+set s2.kv_fin;
+run;
+
+proc sort data=base; by LOPNR time; run;
+
+data base;
+set base;
+by lopnr;
+if first.lopnr;
+keep lopnr sex bg_sweden;
+run;
+
+* Collect all sanctions since 1997;
+
+proc sql;
+create table sanctions as
+select lopnr, datumborj, input(datumborj, yymmdd8.) as indate format yymmdd10., input(datumslut, yymmdd8.) as outdate format yymmdd10.,
+pafoljd, foreskrift, huvudbrott
+from Crime3.V_krim_pafoljd
+where datumborj > "19961231"
+order by lopnr, datumborj
+;
+quit;
+
+* All kontraktsvård sanctions for cohort;
+
+proc sql;
+create table kv as
+select *
+from sanctions
+where (FORESKRIFT="K" or FORESKRIFT="SK") and lopnr in (select lopnr from base)
+order by lopnr, indate;
+;
+quit;
+
+* All parole sanctions for cohort ;
+
+proc sql;
+create table fangelse as
+select *
+from sanctions
+where pafoljd="VILKORLIGTFRIGIVEN" and lopnr in (select lopnr from base)
+order by lopnr, indate;
+quit;
+
+* All probation sanctions for cohort (exl. with contract treatment);
+
+proc sql;
+create table probation as
+select *
+from sanctions
+where pafoljd="SKYDDSTILLSYN" and (FORESKRIFT^="K" and FORESKRIFT^="SK") and lopnr in (select lopnr from base)
+order by lopnr, indate;
+quit;
+
+* Censoring happens if person emigrates from Sweden, ends up in prison, dies, or at the end of follow-up (31 December 2013);
+
+* Prison censoring dates ;
+
+proc sql;
+create table fangelse_x as
+select *
+from sanctions
+where pafoljd="FANGELSE" and lopnr in (select lopnr from base)
+order by lopnr, indate;
+quit;
+
+* Emigration censoring dates ;
+
+proc sql;
+create table migrationx as
+select lopnr, MDATUM
+from crime3.v_migration
+where MTYP='E' and lopnr in (select lopnr from base)
+order by lopnr, mdatum;
+quit;
+
+data migration;
+set migrationx;
+format date_emig yymmdd10.;
+
+date_emig=mdy(substr(MDATUM,5,2),1,substr(MDATUM,1,4));
+if date_emig=. then delete;
+run;
+
+* Censoring due to death ;
+
+proc sql;
+create table death as
+select lopnr,input(x_dodsdat, yymmdd8.) as date_death format yymmdd10.
+from crime3.v_death_cause
+where lopnr in (select lopnr from base)
+order by lopnr;
+quit;
+
+proc sort data=death; by LOPNR date_death; run;
+
+data death;
+set death;
+by lopnr;
+if first.lopnr;
+run;
+
+* Create admin censoring date;
+
+data base;
+set base;
+format admin_end yymmdd10.;
+admin_end = '31DEC2013'd; 
+run;
+
+* Join variables to respective cohorts, first death and admin end;
+
+proc sql;
+create table fangelse as
+select a.*, b.date_death, c.admin_end
+from fangelse as a
+	left join death as b 
+		on a.lopnr=b.lopnr
+	left join base as c
+		on a.lopnr=c.lopnr
+;
+quit;
+
+proc sql;
+create table kv as
+select a.*, b.date_death, c.admin_end
+from kv as a
+	left join death as b 
+		on a.lopnr=b.lopnr
+	left join base as c
+		on a.lopnr=c.lopnr
+;
+quit;
+
+proc sql;
+create table probation as
+select a.*, b.date_death, c.admin_end
+from probation as a
+	left join death as b 
+		on a.lopnr=b.lopnr
+	left join base as c
+		on a.lopnr=c.lopnr
+;
+quit;
+
+* Join emigration date to respective cohorts ;
+
+proc sql;
+create table fangelse as
+select a.*, b.date_emig
+from fangelse as a
+	left join migration as b 
+		on a.lopnr=b.lopnr and a.indate <= b.date_emig 
+;
+quit;
+
+proc sort data=fangelse; by lopnr indate date_emig; run;
+
+data fangelse;
+set fangelse;
+by lopnr indate;
+if first.lopnr or first.indate;
+run;
+
+proc sql;
+create table kv as
+select a.*, b.date_emig
+from kv as a
+	left join migration as b 
+		on a.lopnr=b.lopnr and a.indate <= b.date_emig
+;
+quit;
+
+proc sort data=kv; by lopnr indate date_emig; run;
+
+data kv;
+set kv;
+by lopnr indate;
+if first.lopnr or first.indate;
+run;
+
+proc sql;
+create table probation as
+select a.*, b.date_emig
+from probation as a
+	left join migration as b 
+		on a.lopnr=b.lopnr and a.indate <= b.date_emig
+;
+quit;
+
+proc sort data=probation; by lopnr indate date_emig; run;
+
+data probation;
+set probation;
+by lopnr indate;
+if first.lopnr or first.indate;
+run;
+
+* Join prison dates to respective cohorts ;
+
+proc sql;
+create table fangelse as
+select a.*, b.indate as date_prison
+from fangelse as a
+	left join fangelse_x as b 
+		on a.lopnr=b.lopnr and a.indate <= b.indate
+;
+quit;
+
+proc sort data=fangelse; by lopnr indate date_prison; run;
+
+data fangelse;
+set fangelse;
+by lopnr indate;
+if first.lopnr or first.indate;
+run;
+
+proc sql;
+create table kv as
+select a.*, b.indate as date_prison
+from kv as a
+	left join fangelse_x as b 
+		on a.lopnr=b.lopnr and a.indate <= b.indate
+;
+quit;
+
+proc sort data=kv; by lopnr indate date_prison; run;
+
+data kv;
+set kv;
+by lopnr indate;
+if first.lopnr or first.indate;
+run;
+
+proc sql;
+create table probation as
+select a.*, b.indate as date_prison
+from probation as a
+	left join fangelse_x as b 
+		on a.lopnr=b.lopnr and a.indate <= b.indate
+;
+quit;
+
+proc sort data=probation; by lopnr indate date_prison; run;
+
+data probation;
+set probation;
+by lopnr indate;
+if first.lopnr or first.indate;
+run;
+
+* We also want to censor at the time when the next sanction happens ;
+
+* Merge all files; 
+
+data all;
+set fangelse kv probation;
+run;
+
+/* sort desceding by date to use lag */
+proc sort data=all; by lopnr descending indate; run;
+
+/* use lag to retrieve the next sanction date*/
+data all1;
+set all;
+by lopnr descending indate;
+format nextdate yymmdd10.;
+nextdate=lag(indate);
+if first.lopnr then nextdate=indate;
+if first.indate;
+run;
+
+proc sort data=all1; by lopnr indate; run;
+
+data all1;
+set all1;
+by lopnr indate;
+if last.lopnr then nextdate=.;
+run;
+
+data all1;
+set all1;
+format nextsanct yymmdd10.;
+nextsanct=nextdate-1;
+run;
+
+* Final censoring date for each sanction period;
+
+data all1;
+set all1;
+format fu_start cens yymmdd10.;
+
+fu_start=indate;
+
+cens=min(date_death, admin_end, date_emig, date_prison, nextsanct);
+
+run;
+
+data cohort;
+set all1;
+if cens <= fu_start then delete;
+run;
+
+proc datasets lib=work nolist;  
+delete base all all1 death fangelse fangelse_x kv migration migrationx probation sanctions; 
+quit; 
+run; 
+
+* save cohort ;
+
+data s2.withincohort;
+set cohort;
+run;
+
+***************************************************
+
+* Collecting outcomes ;
+
+data base;
+set s2.withincohort;
+run;
+
+proc sort data=base; by lopnr indate; run;
+
+data base;
+set base;
+by lopnr;
+if first.lopnr;
+run;
+
+* Any crime ;
+
+* Suspected crime outcome ;
+
+proc sql;
+create table susp as 
+select LOPNR, BESLUTSDATUM, X_BROTTDATUM_FROM, X_BROTTDATUM_TOM, BROTTSKOD
+from crime3.v_bra_suspect
+where lopnr in (select lopnr from base);
+quit;
+
+data susp;
+	set susp;
+	format date_susp_f date_susp_t date_susp_d date_fail yymmdd10.;
+	date_susp_f=input(X_BROTTDATUM_FROM,yymmdd8.);
+	date_susp_t=input(X_BROTTDATUM_TOM,yymmdd8.);
+	date_susp_d=input(BESLUTSDATUM,yymmdd8.);
+	crime_code=input(BROTTSKOD,?? best4.);
+	date_fail_exists=1;
+	if date_susp_f^=. then date_fail=date_susp_f;
+	else
+		do;
+			date_fail_exists=0;
+			if date_susp_t^=. then date_fail=date_susp_t;
+			else if date_susp_d^=. then date_fail=date_susp_d;
+		end;
+run;
+
+proc sort data=susp; by lopnr date_fail; run;
+
+data susp;
+set susp;
+by lopnr date_fail;
+if first.lopnr or first.date_fail;
+fail=1;
+run;
+
+* join with cohort;
+
+proc sql;
+create table cohort as
+select a.*, b.date_fail as date_fail_crime
+from cohort as a
+	left join susp as b 
+		on a.lopnr=b.lopnr and a.fu_start < b.date_fail and b.date_fail <= a.cens
+;
+quit;
+
+proc sort data=cohort; by lopnr fu_start date_fail_crime; run;
+
+data cohort;
+set cohort;
+by lopnr fu_start;
+if first.lopnr or first.fu_start;
+run;
+
+data cohort;
+set cohort;
+if date_fail_crime ^=. then fail_crime=1;
+else fail_crime=0;
+run;
+
+data cohort;
+set cohort;
+
+format fu_end_crime yymmdd10.;
+
+fu_end_crime=min(date_fail_crime, cens);
+
+run;
+
+
+* SUD events as outcomes ;
+
+* NPR dias;
+
+proc sql;
+create table combined as
+select * 
+from Crime3.V_PATIENT_DIA
+where substr(DIA,1,4) in ('F100','F103','F104','F105','F110','F113','F114','F115','F120','F123','F124','F125',
+					'F130','F133','F134','F135','F140','F143','F144','F145','F150','F153','F154','F155',
+					'F160','F163','F164','F165','F180','F183','F184','F185','F190','F193','F194','F195') or
+	  substr(DIA,1,3) in ('T36','T37','T38','T39','T40','T41','T42','T43','T44','T45','T46','T47','T48','T49',
+	  				'T50','T51','T65','X40','X41','X42','X43','X44','X45','X49','Y10','Y11','Y12''Y13','Y14','Y15','Y91');
+quit;
+
+proc sql;
+create table combined as
+select *
+from combined
+where lopnr in (select lopnr from base)
+order by lopnr, datum;
+quit;
+
+* Link to base for information on whether visit was unplanned;
+
+proc sql;
+create table combined as
+select a.*, b.pvard, b.mvo
+from combined as a
+	left join Crime3.V_PATIENT_BASE as b
+	on a.lopnr=b.lopnr and a.x_pid=b.x_pid;
+quit;
+
+data combined;
+set combined;
+where pvard="2";
+run;
+
+* restrict to 1 diagnosis per day ;
+
+proc sort data=combined; by lopnr datum; run;
+
+data combined;
+set combined;
+by lopnr datum;
+if first.lopnr or first.datum;
+fail=1;
+run;
+
+proc sql;
+create table dia as
+select lopnr, input(datum, yymmdd8.) as date_fail format yymmdd10., fail
+from combined;
+quit;
+
+* join with cohort;
+
+proc sql;
+create table cohort as
+select a.*, b.date_fail as date_fail_sud
+from cohort as a
+	left join dia as b 
+		on a.lopnr=b.lopnr and a.fu_start < b.date_fail and b.date_fail <= a.cens
+;
+quit;
+
+proc sort data=cohort; by lopnr fu_start date_fail_sud; run;
+
+data cohort;
+set cohort;
+by lopnr fu_start;
+if first.lopnr or first.fu_start;
+run;
+
+data cohort;
+set cohort;
+if date_fail_sud ^=. then fail_sud=1;
+else fail_sud=0;
+run;
+
+data cohort;
+set cohort;
+
+format fu_end_sud yymmdd10.;
+
+fu_end_sud=min(date_fail_sud, cens);
+
+run;
+
+* Mental health outcomes ;
+
+proc sql;
+create table combined as
+select * 
+from Crime3.V_PATIENT_DIA
+where substr(DIA,1,4) in ('F310','F311','F312','F313','F314','F315','F316') or
+	  substr(DIA,1,3) in ('F23','F29','F30','F32','F38','F39','F40','F41','F43') or
+	  ('X60'<=substr(DIA,1,3)<='X84') or
+	  ('Y20'<=substr(DIA,1,3)<='Y34')
+;
+quit;
+
+proc sql;
+create table combined as
+select *
+from combined
+where lopnr in (select lopnr from base)
+order by lopnr, datum;
+quit;
+
+proc sql;
+create table combined as
+select a.lopnr, a.dia, input(a.datum, yymmdd8.) as date_fail format yymmdd10., b.pvard, b.mvo
+from combined as a
+	left join Crime3.V_PATIENT_BASE as b
+	on a.lopnr=b.lopnr and a.x_pid=b.x_pid;
+quit;
+
+data combined;
+set combined;
+where pvard="2";
+run;
+
+* restrict to 1 diagnosis per day ;
+
+proc sort data=combined; by lopnr date_fail; run;
+
+data combined;
+set combined;
+by lopnr date_fail;
+if first.lopnr or first.date_fail;
+fail=1;
+run;
+
+proc sql;
+create table cohort as
+select a.*, b.date_fail as date_fail_psych
+from cohort as a
+	left join combined as b 
+		on a.lopnr=b.lopnr and a.fu_start < b.date_fail and b.date_fail <= a.cens
+;
+quit;
+
+proc sort data=cohort; by lopnr fu_start date_fail_psych; run;
+
+data cohort;
+set cohort;
+by lopnr fu_start;
+if first.lopnr or first.fu_start;
+run;
+
+data cohort;
+set cohort;
+if date_fail_psych ^=. then fail_psych=1;
+else fail_psych=0;
+run;
+
+data cohort;
+set cohort;
+
+format fu_end_psych yymmdd10.;
+
+fu_end_psych=min(date_fail_psych, cens);
+
+run;
+
+* Somatic dias ;
+
+proc sql;
+create table s2.combined as
+select * 
+from Crime3.V_PATIENT_DIA
+where substr(DIA,1,4) in ('K250','K251','K252','K253','K260','K261','K262','K263','K270','K271','K272','K273',
+						  'K280','K281','K282','K283','K290','K291','K292','K293','K704','K702') or
+	  substr(DIA,1,3) in ('H10','I00','I01','I02','I10','I20','I21','I22','I23', 'I24','I26','I30','I33',
+						  'I46','I48','I49','I60','I61','I62','I63','I64','I70','K71','L27','N10',
+						  'N20','N21','N30','R05','R06') or
+	  ('A00'<=substr(DIA,1,3)<='B99') or
+	  ('J00'<=substr(DIA,1,3)<='J06') or
+	  ('J09'<=substr(DIA,1,3)<='J18') or
+	  ('J20'<=substr(DIA,1,3)<='J22') or
+	  ('K35'<=substr(DIA,1,3)<='K37') or
+	  ('L00'<=substr(DIA,1,3)<='L08') or
+	  ('L00'<=substr(DIA,1,3)<='L08') or
+	  ('M00'<=substr(DIA,1,3)<='M03') or
+	  ('J00'<=substr(DIA,1,3)<='J06') or
+	  ('S00'<=substr(DIA,1,3)<='S99') or
+	  ('T00'<=substr(DIA,1,3)<='T35') or
+	  ('T66'<=substr(DIA,1,3)<='T78') or
+	  ('V01'<=substr(DIA,1,3)<='V99') or
+	  ('W00'<=substr(DIA,1,3)<='X39') or
+	  ('X85'<=substr(DIA,1,3)<='Y09')
+;
+quit;
+
+proc sql;
+create table combined as
+select *
+from s2.combined
+where lopnr in (select lopnr from base)
+order by lopnr, datum;
+quit;
+
+proc sql;
+create table combined as
+select a.lopnr, a.dia, input(a.datum, yymmdd8.) as date_fail format yymmdd10., b.pvard, b.mvo
+from combined as a
+	left join Crime3.V_PATIENT_BASE as b
+	on a.lopnr=b.lopnr and a.x_pid=b.x_pid;
+quit;
+
+data combined;
+set combined;
+where pvard="2";
+run;
+
+* restrict to 1 diagnosis per day ;
+
+proc sort data=combined; by lopnr date_fail; run;
+
+data combined;
+set combined;
+by lopnr date_fail;
+if first.lopnr or first.date_fail;
+fail=1;
+run;
+
+proc sql;
+create table cohort as
+select a.*, b.date_fail as date_fail_som
+from cohort as a
+	left join combined as b 
+		on a.lopnr=b.lopnr and a.fu_start < b.date_fail and b.date_fail <= a.cens
+;
+quit;
+
+proc sort data=cohort; by lopnr fu_start date_fail_som; run;
+
+data cohort;
+set cohort;
+by lopnr fu_start;
+if first.lopnr or first.fu_start;
+run;
+
+data cohort;
+set cohort;
+if date_fail_som ^=. then fail_som=1;
+else fail_som=0;
+run;
+
+data cohort;
+set cohort;
+
+format fu_end_som yymmdd10.;
+
+fu_end_som=min(date_fail_som, cens);
+
+run;
+
+
+**********************
+Covariates ;
+
+* age ;
+
+proc sql;
+create table cohort as
+select a.*, input(b.fodelsedatum ||'15' , yymmdd8.) as bdate format yymmdd10.
+from cohort as a
+	left join crime3.v_individual as b 
+		on a.lopnr=b.lopnr;
+quit;
+
+data cohort;
+set cohort;
+age=(fu_start-bdate)/365.25;
+age=round(age,0.01);
+run;
+
+proc sort data=cohort; by lopnr fu_start; run;
+
+* group indicator ;
+
+data cohort;
+set cohort;
+
+if pafoljd="VILKORLIGTFRIGIVEN" then group=0;
+if pafoljd="SKYDDSTILLSYN" and (FORESKRIFT^="K" and FORESKRIFT^="SK") then group=1;
+if pafoljd="SKYDDSTILLSYN" and (FORESKRIFT="K" or FORESKRIFT="SK") then group=2;
+
+run;
+
+* Fu time ;
+
+data cohort;
+set cohort;
+fu_time_crime=fu_end_crime-fu_start;
+fu_time_sud=fu_end_sud-fu_start;
+fu_time_psych=fu_end_psych-fu_start;
+fu_time_som=fu_end_som-fu_start;
+run;
+
+* year of sanction ;
+
+data cohort;
+set cohort;
+year=year(fu_start);
+run;
+
+* save final cohort ;
+
+data s2.withincohort_fin;
+set cohort;
+run;
+
+************************;
+
+*Collect tv-covariates ;
+
+proc sql;
+create table base as 
+select lopnr, year
+from cohort;
+quit;
+
+proc sort data=base; by lopnr year; run;
+
+data base;
+set base;
+by lopnr year;
+if first.lopnr or first.year;
+run;
+
+* Delete obs without coverage in VSP register ;
+
+data base;
+set base;
+if year < 2006 then delete;
+run;
+
+
+* Coverage in VSP: drugs and alcohol (fr. 2006), bostad & occupation (fr. 2009), risknivå (fr. 2010);
+
+proc sql;
+create table covs as
+select lopnr, input(datum_vsp, yymmdd8.) as datum_vsp format yymmdd10., narkotika, alkohol, bostad, sysselsattning, riskniva
+from Crime3.V_KRIM_VSP
+where lopnr in (select lopnr from base);
+quit;
+
+proc sort data=covs; by lopnr datum_vsp; run;
+
+proc sql;
+create table xx as
+select a.lopnr, a.indate, b.*
+from cohort as a
+	left join covs as b
+	on a.lopnr=b.lopnr;
+quit;
+
+* Calculate absolute difference in days between fu end and VSP assessment date ;
+
+data xx;
+set xx;
+diff = intck("day",indate,datum_vsp);
+diff = abs(diff);
+run;
+
+proc sort data=xx; by lopnr indate diff; run;
+
+data xxx;
+set xx;
+by lopnr indate;
+if first.lopnr or first.indate;
+run;
+
+proc sort data=xxx; by lopnr indate; run;
+
+data xxx;
+set xxx;
+year=year(indate);
+if year < 2006 then delete;
+run;
+
+* Remove assessment that did not occur within 90 days of follow-up start;
+
+data xxx;
+set xxx;
+if diff > 90 then delete;
+run;
+
+proc sort data=xxx; by lopnr indate; run;
+
+* Recode covariates ;
+
+data xxx1;
+set xxx;
+
+if alkohol="0" then alc=0;
+if alkohol="1" then alc=1;
+if alkohol=" " or alkohol="X" then alc=.;
+
+if narkotika="0" then drugs=0;
+if narkotika="1" then drugs=1;
+if narkotika="2" then drugs=2;
+if narkotika=" " or narkotika="X" then drugs=.;
+
+if bostad="6" or bostad="7" or bostad="8" then housing=0;
+if bostad="3" or bostad="4" or bostad="5" or bostad="9" then housing=1;
+if bostad="1" or bostad="2" then housing=2;
+if bostad=" " or bostad="X" then housing=.;
+
+if sysselsattning="8" or sysselsattning="9" then occup=0;
+if sysselsattning="1" then occup=1;
+if sysselsattning="6" then occup=2;
+if sysselsattning="7" or sysselsattning="10" or sysselsattning="12" then occup=3;
+if sysselsattning="2" or sysselsattning="4" or sysselsattning="11" then occup=4;
+if sysselsattning="3" or sysselsattning="5" then occup=5;
+if sysselsattning=" " or sysselsattning="X" then occup=.; 
+
+if riskniva="L" then risk = 0;
+if riskniva="M" then risk = 1;
+if riskniva="H" then risk = 2;
+if riskniva=" " or riskniva="X" then risk = .;
+
+run;
+
+* Join covs with the cohort ;
+
+proc sql;
+create table s2.withincohort_covs as
+select a.*, b.alc, b.drugs, b.housing, b.occup, b.risk
+from s2.withincohort_fin as a
+	left join xxx1 as b
+	on a.lopnr=b.lopnr and a.indate=b.indate;
+quit;
