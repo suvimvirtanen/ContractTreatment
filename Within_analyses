@@ -1,0 +1,222 @@
+****************************************************************************;
+
+/* WITHIN-INDIVIDUAL ANALYSIS OF KV VS. OTHER SANCTIONS */
+
+* Descriptive and regression analyses
+
+/******************************************************
+* Name: Within_analyses
+* Created: 2023-01-27 by S Virtanen / MEB
+* Operating program: SAS 9.4
+*******************************************************
+*/
+
+/* Cox Regression analyses */;
+
+data cohort;
+set s2.withincohort_fin;
+run;
+
+PROC FREQ DATA = cohort;
+TABLES group;
+run;
+
+
+* Step 1) minimally adjusted ;
+
+%reg1(outcome=sud);
+%reg1(outcome=psych);
+%reg1(outcome=som);
+%reg1(outcome=crime);
+
+*********************************************************;
+
+* Step 2 - adjust for additional tv confounding ;
+
+data cohort;
+set s2.withincohort_covs;
+run;
+
+* ADJUSTED FOR ALCOHOL AND DRUG USE;
+
+data cohort1;
+set cohort;
+if alc=. or drugs=. then delete;
+run;
+
+PROC FREQ DATA = cohort1;
+TABLES group;
+run;
+
+%reg2(outcome=sud);
+%reg2(outcome=psych);
+%reg2(outcome=som);
+%reg2(outcome=crime);
+
+
+* ALCOHOL, DRUGS, HOUSING + OCCUPATION ;
+
+data cohort2;
+set cohort;
+if alc=. or drugs=. or housing=. or occup=. then delete;
+run;
+
+PROC FREQ DATA = cohort2;
+TABLES group;
+run;
+
+%reg3(outcome=sud);
+%reg3(outcome=psych);
+%reg3(outcome=som);
+%reg3(outcome=crime);
+
+
+* ALCOHOL, DRUGS, HOUSING, OCCUPATION + RECIDIVISM RISK ;
+
+data cohort3;
+set cohort;
+if alc=. or drugs=. or housing=. or occup=. or risk=. then delete;
+run;
+
+PROC FREQ DATA = cohort3;
+TABLES group;
+run;
+
+data cohort3;
+set cohort3;
+if occup=0 then new_occup=0;
+if occup=1 then new_occup=1;
+if occup=2 then new_occup=2;
+if occup=3 or occup=4 then new_occup=3;
+if occup=5 then new_occup=4;
+
+run;
+
+%reg4(outcome=sud);
+%reg4(outcome=psych);
+%reg4(outcome=som);
+%reg4(outcome=crime);
+
+
+************************************************;
+
+* Sanction order ;
+
+proc sort data=cohort; by lopnr indate; run;
+
+data ord;
+set cohort;
+by lopnr indate;
+if first.lopnr or first.indate;
+
+retain sanct_no;
+
+if first.lopnr then sanct_no=0;
+
+sanct_no=sanct_no+1;
+
+run;
+
+data ord;
+set ord;
+
+if pafoljd="VILKORLIGTFRIGIVEN" then prison=1;
+else prison=0;
+
+if pafoljd="SKYDDSTILLSYN" and (FORESKRIFT^="K" and FORESKRIFT^="SK") then prob=1;
+else prob=0;
+
+if pafoljd="SKYDDSTILLSYN" and (FORESKRIFT="K" or FORESKRIFT="SK") then kv=1;
+else kv=0;
+
+run;
+
+proc sql;
+create table test as
+select max(lopnr) as lopnr, max(prison) as prison, max(prob) as prob, max(kv) as kv
+from ord
+group by lopnr;
+quit;
+
+* All three ;
+
+data test2;
+set test;
+where prison=1 and prob=1 and kv=1;
+run;
+
+* Two types ;
+
+data test3;
+set test;
+where prison=1 and kv=1;
+run;
+
+data test4;
+set test;
+where prob=1 and kv=1;
+run;
+
+* Kv only ;
+
+data test5;
+set test;
+where kv=1 and prob=0 and prison=0;
+run;
+
+data test6;
+set test;
+where kv=1 and (prob=1 or prison=1);
+run;
+
+proc sql;
+create table ord2 as
+select *
+from ord
+where lopnr in (select lopnr from test6);
+quit;
+
+proc sort data=ord2; by lopnr indate; run;
+
+proc freq data=ord2;
+tables sanct_no * group ;
+quit;
+
+* time between sanctions ;
+
+data cohort;
+set s2.withincohort_fin;
+run;
+
+%mean_prescr(outp=xx);
+
+
+* Cohort with confirmed supervision after release ;
+
+data cohort;
+set s2.kv_within_superv;
+run;
+
+proc freq data=cohort;
+tables group ;
+quit;
+
+
+%reg1(outcome=sud);
+%reg1(outcome=psych);
+%reg1(outcome=som);
+%reg1(outcome=crime);
+
+* Adjust for time-varying supervision ;
+
+%tv_superv(outcome=sud, outdat=suddat);
+%within_tvsuperv(cohort=suddat);
+
+%tv_superv(outcome=psych, outdat=psychdat);
+%within_tvsuperv(cohort=psychdat);
+
+%tv_superv(outcome=som, outdat=somdat);
+%within_tvsuperv(cohort=somdat);
+
+%tv_superv(outcome=crime, outdat=crimedat);
+%within_tvsuperv(cohort=crimedat);
