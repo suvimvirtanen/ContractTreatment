@@ -1,0 +1,148 @@
+/* CONTRACT TREATMENT MANUSCRIPT - DIFF-IN-DIFF ANALYSIs */
+
+/******************************************************
+* Name: DID_Analysis
+* Created: 2023-03-20 by S Virtanen / MEB
+* Operating program: Stata/BE 17.0
+*******************************************************
+*/
+
+*******************************************************
+* Raw means graphs
+
+gen rel_time=time-gvar
+collapse (mean) sud psych som crime, by(rel_time)
+
+graph twoway connect sud* rel_time, xlabel(-8(1)8)
+graph twoway connect psych* rel_time, xlabel(-8(1)8)
+graph twoway connect som* rel_time, xlabel(-8(1)8)
+graph twoway connect crime* rel_time, xlabel(-8(1)8)
+
+graph combine sud_means.gph psych_means.gph som_means.gph crime_means.gph, rows(2) cols(2)
+
+*******************************************************
+* Event study estimation
+
+sysuse "kv_did.dta", clear
+
+set more off
+
+*ssc install reghdfe, replace
+*ssc install ftools, replace
+*ssc install moremata, replace
+*ssc install hdfe, replace
+*ssc install fuzzydid, replace
+*ssc install did_multiplegt, replace
+*ssc install event_plot, replace
+
+*with controls
+did_multiplegt sud LOPNR time treat, robust_dynamic dynamic(6) placebo(3) breps(30) cluster(LOPNR) controls(age sex bg_sweden) longdiff_placebo jointtestplacebo covariances trends_lin(gvar) seed(69) 
+graph save sud
+
+did_multiplegt psych LOPNR time treat, robust_dynamic dynamic(6) placebo(3) breps(30) cluster(LOPNR) controls(age sex bg_sweden) longdiff_placebo jointtestplacebo covariances trends_lin(gvar) seed(69) 
+graph save psych
+
+did_multiplegt som LOPNR time treat, robust_dynamic dynamic(6) placebo(3) breps(30) cluster(LOPNR) controls(age sex bg_sweden) longdiff_placebo jointtestplacebo covariances trends_lin(gvar) seed(69) 
+graph save som
+
+did_multiplegt crime LOPNR time treat, robust_dynamic dynamic(6) placebo(3) breps(30) cluster(LOPNR) controls(age sex bg_sweden) longdiff_placebo jointtestplacebo covariances trends_lin(gvar) seed(69) 
+graph save crime
+
+*******************************************************
+* HonestDID sensitivity analyses
+
+
+* Outcome: SUD
+did_multiplegt sud LOPNR time treat, robust_dynamic dynamic(6) placebo(3) breps(30) cluster(LOPNR) controls(age sex bg_sweden) longdiff_placebo jointtestplacebo covariances trends_lin(gvar) seed(69) 
+
+* honestdid - first post-period (smoothness restriction)
+honestdid, pre(8/10) post(1/7) delta(sd) mvec(0(0.0025)0.02) vcov(didmgt_vcov) b(didmgt_results_no_avg)
+honestdid, coefplot cached
+graph save "Z:\Suvi\sud_t0.gph"
+
+* honestdid - 3rd post period
+matrix l_vec = (0\0\1\0\0\0\0)
+honestdid, l_vec(l_vec) pre(8/10) post(1/7) delta(sd) mvec(0(0.0025)0.02) vcov(didmgt_vcov) b(didmgt_results_no_avg)
+honestdid, coefplot cached
+graph save "Z:\Suvi\sud_t3.gph"
+
+* honestdid - 5th post period
+matrix l_vec = (0\0\0\0\1\0\0)
+honestdid, l_vec(l_vec) pre(8/10) post(1/7) delta(sd) mvec(0(0.0025)0.02) vcov(didmgt_vcov) b(didmgt_results_no_avg)
+honestdid, coefplot cached
+graph save "Z:\Suvi\sud_t5.gph"
+
+graph combine sud_t0.gph sud_t3.gph sud_t5.gph, rows(1) cols(3) iscale(*1)
+
+
+* Outcome: psych
+
+did_multiplegt psych LOPNR time treat, robust_dynamic dynamic(6) placebo(3) breps(30) cluster(LOPNR) controls(age sex bg_sweden) longdiff_placebo jointtestplacebo covariances trends_lin(gvar) seed(69) 
+
+* honestdid - first post-period (smoothness restriction)
+honestdid, pre(8/10) post(1/7) delta(sd) mvec(0(0.0025)0.02) vcov(didmgt_vcov) b(didmgt_results_no_avg)
+honestdid, coefplot cached
+graph save "Z:\Suvi\psych_t0.gph"
+
+* honestdid - 3rd post period
+matrix l_vec = (0\0\1\0\0\0\0)
+honestdid, l_vec(l_vec) pre(8/10) post(1/7) delta(sd) mvec(0(0.0025)0.02) vcov(didmgt_vcov) b(didmgt_results_no_avg)
+honestdid, coefplot cached
+graph save "Z:\Suvi\psych_t3.gph"
+
+* honestdid - 5th post period
+matrix l_vec = (0\0\0\0\1\0\0)
+honestdid, l_vec(l_vec) pre(8/10) post(1/7) delta(sd) mvec(0(0.0025)0.02) vcov(didmgt_vcov) b(didmgt_results_no_avg)
+honestdid, coefplot cached
+graph save "Z:\Suvi\psych_t5.gph"
+
+graph combine psych_t0.gph psych_t3.gph psych_t5.gph, rows(1) cols(3) iscale(*1)
+
+
+* Outcome: somatic
+
+did_multiplegt som LOPNR time treat, robust_dynamic dynamic(6) placebo(3) breps(30) cluster(LOPNR) controls(age sex bg_sweden) longdiff_placebo jointtestplacebo covariances trends_lin(gvar) seed(69) 
+
+* honestdid - first post-period (smoothness restriction)
+honestdid, pre(8/10) post(1/7) delta(sd) mvec(0(0.0025)0.02) vcov(didmgt_vcov) b(didmgt_results_no_avg)
+honestdid, coefplot cached
+graph save "Z:\Suvi\som_t0.gph"
+
+* honestdid - 3rd post period
+matrix l_vec = (0\0\1\0\0\0\0)
+honestdid, l_vec(l_vec) pre(8/10) post(1/7) delta(sd) mvec(0(0.0025)0.02) vcov(didmgt_vcov) b(didmgt_results_no_avg)
+honestdid, coefplot cached
+graph save "Z:\Suvi\som_t3.gph"
+
+* honestdid - 5th post period
+matrix l_vec = (0\0\0\0\1\0\0)
+honestdid, l_vec(l_vec) pre(8/10) post(1/7) delta(sd) mvec(0(0.0025)0.02) vcov(didmgt_vcov) b(didmgt_results_no_avg)
+honestdid, coefplot cached
+graph save "Z:\Suvi\som_t5.gph"
+
+graph combine som_t0.gph som_t3.gph som_t5.gph, rows(1) cols(3) iscale(*1)
+
+
+* Outcome: crime
+
+did_multiplegt crime LOPNR time treat, robust_dynamic dynamic(6) placebo(3) breps(30) cluster(LOPNR) controls(age sex bg_sweden) longdiff_placebo jointtestplacebo covariances trends_lin(gvar) seed(69) 
+graph save "Z:\Suvi\crime.gph"
+
+* honestdid - first post-period (smoothness restriction)
+honestdid, pre(8/10) post(1/7) delta(sd) mvec(0(0.25)1) vcov(didmgt_vcov) b(didmgt_results_no_avg)
+honestdid, coefplot cached
+graph save "Z:\Suvi\crime_t0.gph"
+
+* honestdid - 3rd post period
+matrix l_vec = (0\0\1\0\0\0\0)
+honestdid, l_vec(l_vec) pre(8/10) post(1/7) delta(sd) mvec(0(0.25)1) vcov(didmgt_vcov) b(didmgt_results_no_avg)
+honestdid, coefplot cached
+graph save "Z:\Suvi\crime_t3.gph"
+
+* honestdid - 5th post period
+matrix l_vec = (0\0\0\0\1\0\0)
+honestdid, l_vec(l_vec) pre(8/10) post(1/7) delta(sd) mvec(0(0.25)1) vcov(didmgt_vcov) b(didmgt_results_no_avg)
+honestdid, coefplot cached
+graph save "Z:\Suvi\crime_t5.gph"
+
+graph combine crime_t0.gph crime_t3.gph crime_t5.gph, rows(1) cols(3) iscale(*1)
