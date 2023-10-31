@@ -1,0 +1,268 @@
+/* CONTRACT TREATMENT MANUSCRIP - GET DATA FOR TIME-VARYING TREATMENT */
+
+/******************************************************
+* Name: Get_data_DID_TV-TREAT
+* Created: 2023-08-22 by S Virtanen / MEB
+* Operating program: SAS 9.4
+*******************************************************
+*/
+
+*******************************************
+
+* Extract supervision period data;
+
+* Cohort lopnrs, indate, outdate ;
+
+data cohort;
+set s2.kv_outcome(keep=lopnr indate outdate);
+run;
+
+proc sort data=cohort; by lopnr indate; run;
+
+data cohort;
+set cohort;
+by lopnr;
+if first.lopnr;
+year=year(indate);
+run;
+
+* Supervision dates ;
+
+proc sql;
+create table sanctions as
+select lopnr, input(datum_overvakning, yymmdd8.) as date format yymmdd10., overvakning, overvakare, frivardskontor
+from Crime3.V_krim_overvakning
+where lopnr in (select lopnr from cohort)
+;
+quit;
+
+* Delete sanctions from cohort that are outside of supervision data coverge ;
+
+data cohort;
+set cohort;
+if year < 2003 then delete;
+run;
+
+* Collect supervision period dates that occur after start of sanction ;
+
+proc sql;
+create table test as
+select a.*, b.*
+from cohort as a
+	left join sanctions as b
+	on a.lopnr=b.lopnr and a.indate <= b.date and b.date <= a.outdate;
+quit;
+
+proc sort data=test; by lopnr indate date; run;
+
+* Supervision period entry dates - select the first one after sanction start;
+
+data enter;
+set test;
+where overvakning="1000";
+run;
+
+proc sort data=enter; by lopnr date; run;
+
+data enter;
+set enter;
+by lopnr;
+if first.lopnr;
+run;
+
+* Exit dates - first after sanction ;
+
+data exit;
+set test;
+where overvakning^="1000";
+run;
+
+proc sort data=exit; by lopnr date; run;
+
+data exit;
+set exit;
+by lopnr;
+if first.lopnr;
+run;
+
+* Pool data and join to cohort lopnrs ;
+
+proc sql;
+create table test2 as
+select a.*, b.date as enter_date, c.date as exit_date, c.overvakning as exit_code
+from cohort as a
+	left join enter as b
+		on a.lopnr=b.lopnr
+	left join exit as c
+		on a.lopnr=c.lopnr;
+quit;
+
+data test2;
+set test2;
+
+if enter_date > exit_date then enter_date=.;
+
+run;
+
+* Calculate period lenghts ;
+
+data test2;
+set test2;
+
+enter_diff=enter_date-indate;
+exit_diff=exit_date-indate;
+exit_diff2=outdate-indate;
+
+run;
+
+* Check distributions ;
+
+Proc Means Data = test2 N MEAN STD MEDIAN MIN MAX Q1 Q3;
+Var enter_diff exit_diff;
+Run;
+
+proc sgplot data=test2;
+    histogram enter_diff;
+run;
+
+proc sgplot data=test2;
+    histogram exit_diff;
+run;
+
+* Keep obs with valid exit date ;
+
+data subcohort;
+set test2;
+where exit_diff ^=. ;
+run;
+
+* ^= 769 obs do not have supervision dates and were removed
+
+************************************************************;
+
+* Open original cohort file and select the sub-cohort lopnrs from it ;
+
+proc sql;
+create table newcohort as
+select *
+from s2.kv_outcome 
+where lopnr in (select lopnr from subcohort);
+quit;
+
+proc sql;
+select count(distinct lopnr)
+from newcohort;
+quit;
+
+* Create new treatment end variable ;
+
+data newcohort;
+set newcohort;
+drop treat_end;
+run;
+
+proc sql;
+create table newcohort as
+select a.*, b.exit_date, b.exit_diff
+from newcohort as a
+	left join subcohort as b
+	on a.lopnr=b.lopnr;
+quit;
+
+* Create indicator variable for when the treatment ended ;
+
+data newcohort;
+set newcohort;
+if exit_date < period_end then treat_end = 1;
+else treat_end = 0;
+run;
+
+proc sort data=newcohort; by lopnr period_start period_end; run;
+
+data s2.kv_outcome_tvtreat;
+set newcohort;
+run;
+
+* Collapse monthly data into quarter years ;
+
+data kv6;
+set newcohort;
+quarter = date;
+quarter_treat=yearmonth; 
+format quarter yyq6. quarter_treat yyq6.;
+run;
+
+PROC SQL;
+CREATE TABLE kv7 AS
+SELECT  lopnr, put(quarter, yyq6.) as quarterx, quarter, put(quarter_treat, yyq6.) as quarter_treatx, quarter_treat,
+sud, psych, som, crime, period_length, treat_length, treat_end, age, sex, bg_sweden  
+FROM kv6 ;
+QUIT;
+
+PROC SQL;
+CREATE TABLE kv8 AS
+SELECT LOPNR, QUARTERX, MAX(quarter) as quarter format yyq6., MAX(quarter_treat ) as quarter_treat format yyq6., 
+		MAX(quarter_treatx) as quarter_treatx, MAX(sud) as sud, MAX(psych) as psych, MAX(som) as som, SUM(crime) as crime, 
+		SUM(period_length) as period_length, MAX(treat_length) as treat_length, MAX(treat_end) as treat_end,
+		MIN(age) as age, MAX(sex) as sex, MAX(bg_sweden) as bg_sweden
+FROM kv7
+GROUP BY LOPNR, QUARTERX;
+QUIT;
+
+* Next create time variable to use in DID model ;
+
+data kv8;
+set kv8;
+quarterxx = input(strip(quarterx),yyq6.);
+format quarterxx yyq6.;
+run;
+
+proc sort data=kv8; by quarterxx; run;
+
+*First quarter is 2000Q3;
+
+Data kv8;
+set kv8;
+start_time = '01JUL2000'd; 
+format start_time yyq6.;
+run;
+
+* Timevar is quarters since 2000Q3;
+
+data kv8;
+set kv8;
+timevar_q = intck("quarter",start_time,quarterxx,'c');
+run;
+
+* Timevar for quarter of treatment ;
+
+data kv8;
+set kv8;
+quarter_treatxx = input(strip(quarter_treatx),yyq6.);
+format quarter_treatxx yyq6.;
+run;
+
+data kv8;
+set kv8;
+treattime_q = intck("quarter",start_time,quarter_treatxx,'c');
+run;
+
+proc sort data=kv8; by lopnr quarterxx; run;
+
+* Take relevant vars from dataset for analysis ;
+
+proc sql;
+create table kv9 as
+select lopnr, timevar_q as time, treattime_q as gvar, quarterx as quarter, quarter_treatx as quarter_treat, 
+			sud, psych, som, crime, period_length, treat_length, treat_end, age, sex, bg_sweden
+from kv8;
+quit;
+
+proc sql;
+select count(distinct lopnr)
+from kv9;
+quit;
+
+data s2.kv_fin_tvtreat;
+set kv9;
+run;
